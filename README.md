@@ -1,7 +1,5 @@
 # WinPEAP
 
-Okay, here is the document with correctly formatted PowerShell code blocks, and the rest of the text formatted similarly to sections 5.4-7 from the previous example.
-
 # Guide: POC for Transitioning to Entra Joined Devices using OSDCloud
 
 ## 1. Introduction
