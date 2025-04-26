@@ -1,6 +1,7 @@
 # WinPEAP
 
-```markdown
+Okay, here is the document with correctly formatted PowerShell code blocks, and the rest of the text formatted similarly to sections 5.4-7 from the previous example.
+
 # Guide: POC for Transitioning to Entra Joined Devices using OSDCloud
 
 ## 1. Introduction
@@ -9,13 +10,13 @@ This document outlines the Proof of Concept (POC) process for transitioning devi
 
 The chosen method utilizes OSDCloud, a PowerShell module, to create a customized Windows Preinstallation Environment (WinPE) delivered via an ISO file. This approach automates the Windows installation and, crucially, incorporates a script to register the device with Windows Autopilot during the WinPE phase, ensuring a smooth onboarding experience into Intune.
 
-> **❗️ Important Warning: Virtual Machine (VM) Considerations ❗️**
->
-> When testing this deployment process using Virtual Machines, be aware of Windows Autopilot profile limitations:
->
-> * **Self-Deploying Mode:** Autopilot profiles set to Self-Deploying mode (and Pre-Provisioning/White Glove) require hardware TPM 2.0 attestation to authenticate the device during enrollment. Most standard VM configurations either lack a virtual TPM (vTPM) or cannot perform the required level of attestation. Attempting to use a Self-Deploying profile on a typical VM will likely result in enrollment failure during the Autopilot process.
->
-> **Recommendation for VMs:** To successfully test Autopilot enrollment on VMs using this OSDCloud method, ensure the target VM object (registered via the hardware hash upload) is assigned an Autopilot profile configured for **User-Driven mode** in Microsoft Intune. User-Driven mode relies on user credentials for authentication and does not require TPM attestation, making it compatible with most VM environments.
+**❗️ Important Warning: Virtual Machine (VM) Considerations ❗️**
+
+When testing this deployment process using Virtual Machines, be aware of Windows Autopilot profile limitations:
+
+* **Self-Deploying Mode:** Autopilot profiles set to Self-Deploying mode (and Pre-Provisioning/White Glove) require hardware TPM 2.0 attestation to authenticate the device during enrollment. Most standard VM configurations either lack a virtual TPM (vTPM) or cannot perform the required level of attestation. Attempting to use a Self-Deploying profile on a typical VM will likely result in enrollment failure during the Autopilot process.
+
+**Recommendation for VMs:** To successfully test Autopilot enrollment on VMs using this OSDCloud method, ensure the target VM object (registered via the hardware hash upload) is assigned an Autopilot profile configured for **User-Driven mode** in Microsoft Intune. User-Driven mode relies on user credentials for authentication and does not require TPM attestation, making it compatible with most VM environments.
 
 ## 2. Goal
 
@@ -79,18 +80,18 @@ This step involves adding the Autopilot registration script and necessary tools 
     * `PCPKsp.dll`: Copy this DLL file from a running Windows machine. Found at: `C:\Windows\System32\PCPKsp.dll`
     * `oa3.cfg` & `input.xml`: ([Provide the actual Github Link here if available, otherwise remove this line])
 
-> **Explanation:**
->
-> * Capturing the hardware hash for Autopilot registration typically needs access to the device's TPM. Accessing the TPM directly from WinPE can be problematic.
-> * The `oa3tool.exe` (along with its dependency `PCPKsp.dll` and configuration files) provides a reliable way to extract the necessary hardware information within the WinPE environment. (This specific technique for using `oa3tool.exe` within WinPE for Autopilot hash capture was adapted from information shared on [Mike MDM's blog](https://mikemdm.de/ - *Note: Actual blog post link would be more specific if known*)).
-> * The `4kAutopilotHashUpload.ps1` script leverages `oa3tool.exe` to get the hash and then uses Microsoft Graph API calls to upload it directly to the Autopilot device list in Entra/Intune.
-> * Performing this upload during WinPE, before the main Windows OS setup begins, is crucial for ensuring the device is known to Autopilot by the time Windows checks for an Autopilot profile during OOBE.
+**Explanation:**
+
+* Capturing the hardware hash for Autopilot registration typically needs access to the device's TPM. Accessing the TPM directly from WinPE can be problematic.
+* The `oa3tool.exe` (along with its dependency `PCPKsp.dll` and configuration files) provides a reliable way to extract the necessary hardware information within the WinPE environment. This specific technique for using `oa3tool.exe` within WinPE for Autopilot hash capture was adapted from information shared on Mike MDM's blog.
+* The `4kAutopilotHashUpload.ps1` script leverages `oa3tool.exe` to get the hash and then uses Microsoft Graph API calls to upload it directly to the Autopilot device list in Entra/Intune.
+* Performing this upload during WinPE, before the main Windows OS setup begins, is crucial for ensuring the device is known to Autopilot by the time Windows checks for an Autopilot profile during OOBE.
 
 ### Step 5.4: Edit the WinPE Image
 
 This command modifies the base WinPE image (`boot.wim`), injecting the files added in Step 5.3 and configuring the OSDCloud deployment process.
 
-> **Important Warning:** The `Edit-OSDCloudWinPE` command applies the parameters specified each time it is run. If you run the command once with certain flags (e.g., `-StartOSDCloud`) and then run it again later with different flags (e.g., only `-Wallpaper`), the settings from the first run (like `-StartOSDCloud` or previously set `-CloudDriver`) will be overwritten or reset to defaults unless they are explicitly included again in the second command. It is best practice to include all desired `Edit-OSDCloudWinPE` customization flags in a single execution.
+**Important Warning:** The `Edit-OSDCloudWinPE` command applies the parameters specified each time it is run. If you run the command once with certain flags (e.g., `-StartOSDCloud`) and then run it again later with different flags (e.g., only `-Wallpaper`), the settings from the first run (like `-StartOSDCloud` or previously set `-CloudDriver`) will be overwritten or reset to defaults unless they are explicitly included again in the second command. It is best practice to include all desired `Edit-OSDCloudWinPE` customization flags in a single execution.
 
 ```powershell
 # Define path to wallpaper (optional) - replace with your actual path
@@ -104,13 +105,13 @@ Edit-OSDCloudWinPE -StartOSDCloud "-OSVersion 'Windows 11' -OSBuild 23H2 -OSEdit
                    -Verbose
 ```
 
-* **`-StartOSDCloud "..."`:** Defines the parameters passed to the OSDCloud engine when it runs within WinPE.
-    * **`-OSVersion`, `-OSBuild`, `-OSEdition`, `-OSLanguage`, `-OSLicense`:** Specify the target Windows operating system details. Adjust as needed.
-    * **`-ZTI`:** Enables Zero Touch Installation for automated deployment within WinPE.
-    * **`-Restart`:** Automatically restarts the computer after the OSDCloud process completes.
-* **`-CloudDriver Dell`:** Instructs OSDCloud to download the latest WinPE driver pack specifically for Dell hardware directly from Dell's sources and inject them into the WinPE image. This significantly improves hardware compatibility (especially network and storage controllers) during the WinPE phase for Dell devices. Other vendors like `'HP'` or `'Lenovo'` can also be specified.
-* **`-Wallpaper $path` (Optional):** Sets a custom background image for the WinPE environment itself. Replace `$path` with the full path to a `.jpg` or `.bmp` image file. This is purely cosmetic for the deployment phase. If not needed, omit this parameter.
-* **`-Verbose`:** Provides detailed output during command execution.
+* `-StartOSDCloud "..."`: Defines the parameters passed to the OSDCloud engine when it runs within WinPE.
+    * `-OSVersion`, `-OSBuild`, `-OSEdition`, `-OSLanguage`, `-OSLicense`: Specify the target Windows operating system details. Adjust as needed.
+    * `-ZTI`: Enables Zero Touch Installation for automated deployment within WinPE.
+    * `-Restart`: Automatically restarts the computer after the OSDCloud process completes.
+* `-CloudDriver Dell`: Instructs OSDCloud to download the latest WinPE driver pack specifically for Dell hardware directly from Dell's sources and inject them into the WinPE image. This significantly improves hardware compatibility (especially network and storage controllers) during the WinPE phase for Dell devices. Other vendors like `'HP'` or `'Lenovo'` can also be specified.
+* `-Wallpaper $path` (Optional): Sets a custom background image for the WinPE environment itself. Replace `$path` with the full path to a `.jpg` or `.bmp` image file. This is purely cosmetic for the deployment phase. If not needed, omit this parameter.
+* `-Verbose`: Provides detailed output during command execution.
 
 ### Step 5.5: Create the Bootable ISO File
 
@@ -138,4 +139,3 @@ New-OSDCloudISO -Verbose
 ## 7. Conclusion
 
 This OSDCloud process provides a robust method for achieving a zero-touch (for Self-Deploying) or minimal-touch (for User-Driven) deployment experience that transitions devices directly into an Entra Joined and Intune-managed state. By injecting the Autopilot registration script and appropriate WinPE drivers, it overcomes common timing and hardware compatibility issues, ensuring devices are correctly onboarded from the start.
-```
