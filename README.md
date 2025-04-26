@@ -75,13 +75,13 @@ This step involves adding the Autopilot registration script and necessary tools 
 2.  **Copy Required Files:** Place the following files into this `Startnet` directory:
     * `4kAutopilotHashUpload.ps1`: The custom PowerShell script responsible for capturing and uploading the hash.
     * `oa3tool.exe`: Copy this executable from the ADK installation path. Typically found at: `C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Licensing\OA30\oa3tool.exe`
-    * `PCPKsp.dll`: Copy this DLL file from a running Windows machine w/ a similar build. Found at: `C:\Windows\System32\PCPKsp.dll`
+    * `PCPKsp.dll`: Copy this DLL file from a Windows machine w/ a similar build. Found at: `C:\Windows\System32\PCPKsp.dll`
     * `oa3.cfg` & `input.xml`
 
 **Explanation:**
 
 * Capturing the hardware hash for Autopilot registration typically needs access to the device's TPM. Accessing the TPM directly from WinPE can be problematic.
-* The `oa3tool.exe` (along with its dependency `PCPKsp.dll` and configuration files) provides a reliable way to extract the necessary hardware information within the WinPE environment. This specific technique for using `oa3tool.exe` within WinPE for Autopilot hash capture was adapted from information shared on [Can you create a Autopilot Hash from WinPE? Yes! (Mike's MDM Blog](https://mikemdm.de/2023/01/29/can-you-create-a-autopilot-hash-from-winpe-yes/)
+* The `oa3tool.exe` (along with its dependency `PCPKsp.dll` and configuration files) provides a reliable way to extract the necessary hardware information within the WinPE environment. This specific technique for using `oa3tool.exe` within WinPE for Autopilot hash capture was adapted from information shared on [Can you create a Autopilot Hash from WinPE? Yes! (Mike's MDM Blog)](https://mikemdm.de/2023/01/29/can-you-create-a-autopilot-hash-from-winpe-yes/)
 * The `4kAutopilotHashUpload.ps1` script leverages `oa3tool.exe` to get the hash and then uses Microsoft Graph API calls to upload it directly to the Autopilot device list in Entra/Intune.
 * Performing this upload during WinPE, before the main Windows OS setup begins, is crucial for ensuring the device is known to Autopilot by the time Windows checks for an Autopilot profile during OOBE.
 
