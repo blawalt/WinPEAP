@@ -41,7 +41,7 @@ Before starting, ensure the following are installed and configured on the admini
     ```powershell
     Install-Module OSDCloud -Force
     ```
-* **Windows Assessment and Deployment Kit (ADK) and WinPE Add-on:** Install the Windows 10 or Windows 11 ADK and the corresponding Windows PE add-on. These provide essential deployment tools, including WinPE itself and the `oa3tool.exe` needed later.
+* **Windows Assessment and Deployment Kit (ADK) and WinPE Add-on:** Install the Windows 10 ADK and the corresponding Windows PE add-on. These provide essential deployment tools, including WinPE itself and the `oa3tool.exe` needed later.
     * Download link: [Windows ADK Downloads (Microsoft Learn)](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install)
     * Ensure installation of both the **ADK** and the **WinPE Add-on** components.
 
