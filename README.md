@@ -4,7 +4,10 @@
 
 ## 1. Introduction
 
-This document outlines the Proof of Concept (POC) process for transitioning devices from their current Hybrid Azure AD Joined state (without Intune management) to a fully cloud-managed state using Microsoft Entra Join (formerly Azure AD Join) and Intune.
+This document outlines the Proof of Concept (POC) process for transitioning devices from their current Hybrid Azure AD Joined state (without Intune management) to a fully cloud-managed state using Microsoft Entra Join (formerly Azure AD Join) and Intune w/ Autopilot Provisioning (described below).
+
+![AP-Provisioning](https://github.com/user-attachments/assets/96b44640-1d2a-431b-8c74-8ba2c71a191f)
+
 
 The chosen method utilizes OSDCloud, a PowerShell module, to create a customized Windows Preinstallation Environment (WinPE) delivered via an ISO file. This approach automates the Windows installation and, crucially, incorporates a script to register the device with Windows Autopilot during the WinPE phase, ensuring a smooth onboarding experience into Intune.
 
