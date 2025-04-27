@@ -73,7 +73,7 @@ This step involves adding the Autopilot registration script and necessary tools 
 
 1.  **Navigate to the Startnet Scripts Folder:** Go to the Startnet scripts directory within the created workspace. Using the example above, this would be: `C:\OSDCloud\EntraJoinPOC\Config\Scripts\Startnet\`
 2.  **Copy Required Files:** Place the following files into this `Startnet` directory:
-    * `4kAutopilotHashUpload.ps1`: The custom PowerShell script responsible for capturing and uploading the hash.
+    * `4kAutopilotHashUpload.ps1`: The custom PowerShell script responsible for capturing and uploading the hash (you MUST update $groupTag to your respective GroupTag at Intune.
     * `oa3tool.exe`: Copy this executable from the ADK installation path. Typically found at: `C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Licensing\OA30\oa3tool.exe`
     * `PCPKsp.dll`: Copy this DLL file from a Windows machine w/ a similar build. Found at: `C:\Windows\System32\PCPKsp.dll`
     * `oa3.cfg` & `input.xml`
