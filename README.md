@@ -111,7 +111,7 @@ Edit-OSDCloudWinPE -StartOSDCloud "-OSVersion 'Windows 11' -OSBuild 23H2 -OSEdit
     * `-ZTI`: Enables Zero Touch Installation for automated deployment within WinPE.
     * `-Restart`: Automatically restarts the computer after the OSDCloud process completes.
 * `-CloudDriver Dell`: Instructs OSDCloud to download the latest WinPE driver pack specifically for Dell hardware directly from Dell's sources and inject them into the WinPE image. This significantly improves hardware compatibility (especially network and storage controllers) during the WinPE phase for Dell devices. Other vendors like `'HP'` or `'Lenovo'` can also be specified.
-* `-Wallpaper $path` (Optional): Sets a custom background image for the WinPE environment itself. Replace `$path` with the full path to a `.jpg` or `.bmp` image file. This is purely cosmetic for the deployment phase. If not needed, omit this parameter.
+* `-Wallpaper $path` (Optional): Sets a custom background image for the WinPE environment itself. Replace `$path` with the full path to a `.jpg` image file. This is purely cosmetic for the deployment phase. If not needed, omit this parameter.
 * `-Verbose`: Provides detailed output during command execution.
 
 ### Step 5.5: Create the Bootable ISO File
