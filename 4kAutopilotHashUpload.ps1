@@ -155,6 +155,41 @@ function Get-AutopilotImportedDevice {
     }
 }
 
+function Get-AutopilotDevice {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)] [String] $Serial,
+        [Parameter(Mandatory = $true)] [String] $AuthToken
+    )
+
+    try {
+        # Set up API request
+        $headers = @{
+            "Authorization" = "Bearer $AuthToken"
+            "Content-Type"  = "application/json"
+        }
+
+        # Get device status from Autopilot
+        $response = Invoke-RestMethod -Method Get `
+            -Uri "https://graph.microsoft.com/beta/deviceManagement/windowsAutopilotDeviceIdentities?`$filter=contains(serialNumber,%27$serial%27)" `
+            -Headers $headers
+        $device = $response.value | Where-Object { $_.serialNumber -eq $serial }
+        return $device
+    }
+    catch {
+        Write-Host "Error getting device status: $_" -ForegroundColor Red
+        if ($_.Exception.Response) {
+            $errorResponse = $_.Exception.Response.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($errorResponse)
+            $reader.BaseStream.Position = 0
+            $reader.DiscardBufferedData()
+            $responseBody = $reader.ReadToEnd()
+            Write-Host $responseBody -ForegroundColor Red
+        }
+        throw
+    }
+}
+
 # Check if we're in WinPE and have the required PCPKsp.dll file
 If ((Test-Path X:\Windows\System32\wpeutil.exe) -and (Test-Path $PSScriptRoot\PCPKsp.dll))
 {
@@ -254,36 +289,44 @@ If (Test-Path $PSScriptRoot\OA3.xml)
                 Write-Host "Adding device to Autopilot..." -ForegroundColor Yellow
                 $importedDevice = Add-AutopilotImportedDevice -SerialNumber $serial -HardwareHash $hash -GroupTag $GroupTag -AuthToken $authToken
                 
-                if ($importedDevice) {
-                    Write-Host "Device added successfully with ID: $($importedDevice.id)" -ForegroundColor Green
-                    
-                    # Wait for processing to complete
-                    Write-Host "Waiting for import to complete..." -ForegroundColor Yellow
-                    $processingComplete = $false
-                    $maxRetries = 20
-                    $retryCount = 0
-                    
-                    while (-not $processingComplete -and $retryCount -lt $maxRetries) {
-                        Start-Sleep -Seconds 15
-                        $device = Get-AutopilotImportedDevice -Id $importedDevice.id -AuthToken $authToken
+                #Check if device already exists in Autopilot
+                $device = Get-AutopilotDevice -Serial $serial -AuthToken $authToken
+                if ($device) {
+                    #Device already exists in Autopilot
+                    Write-Host "Device already exists in Autopilot with SerialNumber: $serial" -ForegroundColor Green
+                }
+                else {
+                    if ($importedDevice) {
+                        Write-Host "Device added successfully with ID: $($importedDevice.id)" -ForegroundColor Green
                         
-                        if ($device.state.deviceImportStatus -eq "complete") {
-                            $processingComplete = $true
-                            Write-Host "Import completed successfully!" -ForegroundColor Green
-                            Write-Host "Device Registration ID: $($device.state.deviceRegistrationId)" -ForegroundColor Cyan
+                        # Wait for processing to complete
+                        Write-Host "Waiting for import to complete..." -ForegroundColor Yellow
+                        $processingComplete = $false
+                        $maxRetries = 20
+                        $retryCount = 0
+                        
+                        while (-not $processingComplete -and $retryCount -lt $maxRetries) {
+                            Start-Sleep -Seconds 15
+                            $device = Get-AutopilotImportedDevice -Id $importedDevice.id -AuthToken $authToken
+                            
+                            if ($device.state.deviceImportStatus -eq "complete") {
+                                $processingComplete = $true
+                                Write-Host "Import completed successfully!" -ForegroundColor Green
+                                Write-Host "Device Registration ID: $($device.state.deviceRegistrationId)" -ForegroundColor Cyan
+                            }
+                            elseif ($device.state.deviceImportStatus -eq "error") {
+                                Write-Host "Import failed with error: $($device.state.deviceErrorCode) - $($device.state.deviceErrorName)" -ForegroundColor Red
+                                break
+                            }
+                            else {
+                                Write-Host "Import status: $($device.state.deviceImportStatus). Waiting..." -ForegroundColor Yellow
+                                $retryCount++
+                            }
                         }
-                        elseif ($device.state.deviceImportStatus -eq "error") {
-                            Write-Host "Import failed with error: $($device.state.deviceErrorCode) - $($device.state.deviceErrorName)" -ForegroundColor Red
-                            break
+                        
+                        if (-not $processingComplete) {
+                            Write-Host "Import did not complete within the expected time." -ForegroundColor Yellow
                         }
-                        else {
-                            Write-Host "Import status: $($device.state.deviceImportStatus). Waiting..." -ForegroundColor Yellow
-                            $retryCount++
-                        }
-                    }
-                    
-                    if (-not $processingComplete) {
-                        Write-Host "Import did not complete within the expected time." -ForegroundColor Yellow
                     }
                 }
             }
