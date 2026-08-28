@@ -22,10 +22,10 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$false)] [String] $GroupTag = "<YOUR-AP-GROUP-TAG>",
-    [Parameter(Mandatory=$false)] [String] $TenantId = "<TENANT-ID>",
-    [Parameter(Mandatory=$false)] [String] $AppId = "<APP/CLIENT-ID>",
-    [Parameter(Mandatory=$false)] [String] $AppSecret = "<APP/CLIENT-SECRET",
+    [Parameter(Mandatory=$false)] [String] $GroupTag,
+    [Parameter(Mandatory=$true)] [String] $TenantId,
+    [Parameter(Mandatory=$true)] [String] $AppId,
+    [Parameter(Mandatory=$true)] [String] $AppSecret,
     [Parameter(Mandatory=$false)] [Switch] $UploadToAutopilot = $true
 )
 
