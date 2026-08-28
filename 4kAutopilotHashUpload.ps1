@@ -1,32 +1,26 @@
-﻿<#
+<#
 .SYNOPSIS
-    Collects Windows Autopilot hardware hash from WinPE and uploads to Microsoft Intune
-.DESCRIPTION
-    This script gathers the Windows Autopilot hardware hash using OA3Tool while in WinPE,
-    including TPM information by registering the PCPKsp.dll, and then uploads the device
-    to Windows Autopilot via Microsoft Graph API
-.PARAMETER GroupTag
-    Optional. Specifies the Autopilot group tag to assign to the device.
-.PARAMETER TenantId
-    Required for upload. Specifies the Azure AD tenant ID for authentication.
-.PARAMETER AppId
-    Required for upload. Specifies the app registration ID for authentication.
-.PARAMETER AppSecret
-    Required for upload. Specifies the app registration secret for authentication.
-.PARAMETER UploadToAutopilot
-    Optional. Indicates whether to upload the device to Autopilot. Default is $false.
+    Collects Windows Autopilot 4k hardware hash from WinPE and uploads to Intune.
+.PARAMETER GroupTag      Autopilot group tag. Optional.
+.PARAMETER TenantId      Entra tenant ID.      Required for upload.
+.PARAMETER AppId         App registration ID.  Required for upload.
+.PARAMETER AppSecret     App registration secret. Required for upload.
+.PARAMETER UploadToAutopilot  Upload the device. Default $true.
+.PARAMETER ToolRoot      Folder holding oa3tool.exe / OA3.cfg / input.xml / PCPKsp.dll.
+                         Defaults to X:\ (baked from WinPEStartup\Files). Leave as-is even
+                         when this script itself is fetched from GitHub to $env:TEMP.
 .NOTES
-    File Name: 4kAutopilotHashUpload.ps1
-    Author: Based on Mike Mdm's approach (https://mikemdm.de/2023/01/29/can-you-create-a-autopilot-hash-from-winpe-yes/)
+    Based on Mike Mdm: https://mikemdm.de/2023/01/29/can-you-create-a-autopilot-hash-from-winpe-yes/
 #>
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory=$false)] [String] $GroupTag,
-    [Parameter(Mandatory=$true)] [String] $TenantId,
-    [Parameter(Mandatory=$true)] [String] $AppId,
-    [Parameter(Mandatory=$true)] [String] $AppSecret,
-    [Parameter(Mandatory=$false)] [Switch] $UploadToAutopilot = $true
+    [Parameter(Mandatory=$false)] [String] $GroupTag = "",
+    [Parameter(Mandatory=$false)] [String] $TenantId,
+    [Parameter(Mandatory=$false)] [String] $AppId,
+    [Parameter(Mandatory=$false)] [String] $AppSecret,
+    [Parameter(Mandatory=$false)] [Switch] $UploadToAutopilot = $true,
+    [Parameter(Mandatory=$false)] [String] $ToolRoot = 'X:\'
 )
 
 # Functions for Autopilot API operations
@@ -39,18 +33,13 @@ function Get-AuthToken {
     )
 
     try {
-        # Define auth body
         $body = @{
             grant_type    = "client_credentials"
             client_id     = $AppId
             client_secret = $AppSecret
             scope         = "https://graph.microsoft.com/.default"
         }
-
-        # Get OAuth token
         $response = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" -Body $body
-        
-        # Return the token
         return $response.access_token
     }
     catch {
@@ -60,8 +49,7 @@ function Get-AuthToken {
             $reader = New-Object System.IO.StreamReader($errorResponse)
             $reader.BaseStream.Position = 0
             $reader.DiscardBufferedData()
-            $responseBody = $reader.ReadToEnd()
-            Write-Host $responseBody -ForegroundColor Red
+            Write-Host ($reader.ReadToEnd()) -ForegroundColor Red
         }
         throw
     }
@@ -70,40 +58,29 @@ function Get-AuthToken {
 function Add-AutopilotImportedDevice {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory=$true)] [String] $SerialNumber,
-        [Parameter(Mandatory=$true)] [String] $HardwareHash,
+        [Parameter(Mandatory=$true)]  [String] $SerialNumber,
+        [Parameter(Mandatory=$true)]  [String] $HardwareHash,
         [Parameter(Mandatory=$false)] [String] $GroupTag = "",
-        [Parameter(Mandatory=$true)] [String] $AuthToken
+        [Parameter(Mandatory=$true)]  [String] $AuthToken
     )
 
     try {
-        # Create the device object
         $deviceObject = @{
-            serialNumber = $SerialNumber
+            serialNumber       = $SerialNumber
             hardwareIdentifier = $HardwareHash
         }
-
-        # Add GroupTag if specified
-        if (-not [string]::IsNullOrEmpty($GroupTag)) {
-            $deviceObject.groupTag = $GroupTag
-        }
-
-        # Convert to JSON
+        if (-not [string]::IsNullOrEmpty($GroupTag)) { $deviceObject.groupTag = $GroupTag }
         $deviceJson = $deviceObject | ConvertTo-Json
 
-        # Set up API request
         $headers = @{
             "Authorization" = "Bearer $AuthToken"
-            "Content-Type" = "application/json"
+            "Content-Type"  = "application/json"
         }
-
-        # Upload to Autopilot using the importedWindowsAutopilotDeviceIdentities endpoint
         Write-Host "Uploading device to Autopilot..." -ForegroundColor Yellow
         $response = Invoke-RestMethod -Method Post `
             -Uri "https://graph.microsoft.com/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities" `
             -Headers $headers `
             -Body $deviceJson
-
         return $response
     }
     catch {
@@ -113,8 +90,7 @@ function Add-AutopilotImportedDevice {
             $reader = New-Object System.IO.StreamReader($errorResponse)
             $reader.BaseStream.Position = 0
             $reader.DiscardBufferedData()
-            $responseBody = $reader.ReadToEnd()
-            Write-Host $responseBody -ForegroundColor Red
+            Write-Host ($reader.ReadToEnd()) -ForegroundColor Red
         }
         throw
     }
@@ -128,17 +104,13 @@ function Get-AutopilotImportedDevice {
     )
 
     try {
-        # Set up API request
         $headers = @{
             "Authorization" = "Bearer $AuthToken"
-            "Content-Type" = "application/json"
+            "Content-Type"  = "application/json"
         }
-
-        # Get device status from Autopilot
         $response = Invoke-RestMethod -Method Get `
             -Uri "https://graph.microsoft.com/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities/$Id" `
             -Headers $headers
-
         return $response
     }
     catch {
@@ -148,8 +120,7 @@ function Get-AutopilotImportedDevice {
             $reader = New-Object System.IO.StreamReader($errorResponse)
             $reader.BaseStream.Position = 0
             $reader.DiscardBufferedData()
-            $responseBody = $reader.ReadToEnd()
-            Write-Host $responseBody -ForegroundColor Red
+            Write-Host ($reader.ReadToEnd()) -ForegroundColor Red
         }
         throw
     }
@@ -163,18 +134,14 @@ function Get-AutopilotDevice {
     )
 
     try {
-        # Set up API request
         $headers = @{
             "Authorization" = "Bearer $AuthToken"
             "Content-Type"  = "application/json"
         }
-
-        # Get device status from Autopilot
         $response = Invoke-RestMethod -Method Get `
             -Uri "https://graph.microsoft.com/beta/deviceManagement/windowsAutopilotDeviceIdentities?`$filter=contains(serialNumber,%27$serial%27)" `
             -Headers $headers
-        $device = $response.value | Where-Object { $_.serialNumber -eq $serial }
-        return $device
+        return ($response.value | Where-Object { $_.serialNumber -eq $serial })
     }
     catch {
         Write-Host "Error getting device status: $_" -ForegroundColor Red
@@ -183,139 +150,106 @@ function Get-AutopilotDevice {
             $reader = New-Object System.IO.StreamReader($errorResponse)
             $reader.BaseStream.Position = 0
             $reader.DiscardBufferedData()
-            $responseBody = $reader.ReadToEnd()
-            Write-Host $responseBody -ForegroundColor Red
+            Write-Host ($reader.ReadToEnd()) -ForegroundColor Red
         }
         throw
     }
 }
 
-# Check if we're in WinPE and have the required PCPKsp.dll file
-If ((Test-Path X:\Windows\System32\wpeutil.exe) -and (Test-Path $PSScriptRoot\PCPKsp.dll))
-{
+# ---- resolve tool paths (baked on X:\ even when this script runs from $env:TEMP) ----
+$PCPKsp  = Join-Path $ToolRoot 'PCPKsp.dll'
+$OA3Tool = Join-Path $ToolRoot 'oa3tool.exe'
+$OA3Cfg  = Join-Path $ToolRoot 'OA3.cfg'
+$OA3Xml  = Join-Path $ToolRoot 'OA3.xml'
+
+# Check if we're in WinPE and have PCPKsp.dll
+if ((Test-Path X:\Windows\System32\wpeutil.exe) -and (Test-Path $PCPKsp)) {
     Write-Host "Running in WinPE, installing PCPKsp.dll for TPM support..." -ForegroundColor Yellow
-    Copy-Item "$PSScriptRoot\PCPKsp.dll" "X:\Windows\System32\PCPKsp.dll"
-    # Register PCPKsp
+    Copy-Item $PCPKsp "X:\Windows\System32\PCPKsp.dll" -Force
     rundll32 X:\Windows\System32\PCPKsp.dll,DllInstall
 }
 
-# Change Current Directory so OA3Tool finds the files written in the Config File 
-Push-Location $PSScriptRoot
+# OA3Tool resolves relative paths from its working directory
+Push-Location $ToolRoot
 
-# Delete old Files if exits
-if (Test-Path $PSScriptRoot\OA3.xml) 
-{
-    Remove-Item $PSScriptRoot\OA3.xml -Force
-}
+if (Test-Path $OA3Xml) { Remove-Item $OA3Xml -Force }
 
-# Get SN from WMI
 $serial = (Get-WmiObject -Class Win32_BIOS).SerialNumber
 Write-Host "Device Serial Number: $serial" -ForegroundColor Cyan
 
-# Run OA3Tool
 Write-Host "Running OA3Tool to gather hardware hash..." -ForegroundColor Green
-&$PSScriptRoot\oa3tool.exe /Report /ConfigFile=$PSScriptRoot\OA3.cfg /NoKeyCheck
+& $OA3Tool /Report /ConfigFile=$OA3Cfg /NoKeyCheck
 
-# Check if Hash was found
-If (Test-Path $PSScriptRoot\OA3.xml) 
-{
-    # Read Hash from generated XML File
-    [xml]$xmlhash = Get-Content -Path "$PSScriptRoot\OA3.xml"
+if (Test-Path $OA3Xml) {
+    [xml]$xmlhash = Get-Content -Path $OA3Xml
     $hash = $xmlhash.Key.HardwareHash
     Write-Host "Hardware Hash successfully retrieved" -ForegroundColor Green
-    
-    # Delete XML File
-    Remove-Item $PSScriptRoot\OA3.xml -Force
-    
-    # Output the hash information to screen
+    Remove-Item $OA3Xml -Force
+
     Write-Host "Serial Number: $serial" -ForegroundColor Cyan
     Write-Host "Group Tag: $GroupTag" -ForegroundColor Cyan
     Write-Host "Hardware Hash length: $(($hash).Length) characters" -ForegroundColor Cyan
-    
-    # Create temporary CSV file in case it's needed
+
     $TempCSVPath = "X:\Windows\Temp\AutopilotHash.csv"
-    
-    # Create the CSV object
     $computers = @()
     $product = ""
-    
-    if ($GroupTag -ne "")
-    {
-        # Create a pipeline object with Group Tag
+
+    if ($GroupTag -ne "") {
         $c = New-Object psobject -Property @{
             "Device Serial Number" = $serial
-            "Windows Product ID" = $product
-            "Hardware Hash" = $hash
-            "Group Tag" = $GroupTag
+            "Windows Product ID"   = $product
+            "Hardware Hash"        = $hash
+            "Group Tag"            = $GroupTag
         }
-        
-        # Save to temp CSV
         $computers += $c
-        $computers | Select "Device Serial Number", "Windows Product ID", "Hardware Hash", "Group Tag" | 
-            ConvertTo-CSV -NoTypeInformation | % {$_ -replace '"',''} | Out-File $TempCSVPath
+        $computers | Select "Device Serial Number", "Windows Product ID", "Hardware Hash", "Group Tag" |
+            ConvertTo-CSV -NoTypeInformation | % { $_ -replace '"','' } | Out-File $TempCSVPath
     }
-    else
-    {
-        # Create a pipeline object without Group Tag
+    else {
         $c = New-Object psobject -Property @{
             "Device Serial Number" = $serial
-            "Windows Product ID" = $product
-            "Hardware Hash" = $hash
+            "Windows Product ID"   = $product
+            "Hardware Hash"        = $hash
         }
-        
-        # Save to temp CSV
         $computers += $c
-        $computers | Select "Device Serial Number", "Windows Product ID", "Hardware Hash" | 
-            ConvertTo-CSV -NoTypeInformation | % {$_ -replace '"',''} | Out-File $TempCSVPath
+        $computers | Select "Device Serial Number", "Windows Product ID", "Hardware Hash" |
+            ConvertTo-CSV -NoTypeInformation | % { $_ -replace '"','' } | Out-File $TempCSVPath
     }
-    
     Write-Host "CSV file created at: $TempCSVPath" -ForegroundColor Green
-    
-    # Upload to Autopilot if requested
-    if ($UploadToAutopilot)
-    {
-        if ([string]::IsNullOrEmpty($TenantId) -or [string]::IsNullOrEmpty($AppId) -or [string]::IsNullOrEmpty($AppSecret))
-        {
-            Write-Host "Error: TenantId, AppId, and AppSecret parameters are required for Autopilot upload" -ForegroundColor Red
+
+    if ($UploadToAutopilot) {
+        if ([string]::IsNullOrEmpty($TenantId) -or [string]::IsNullOrEmpty($AppId) -or [string]::IsNullOrEmpty($AppSecret)) {
+            Write-Host "Error: TenantId, AppId, and AppSecret are required for Autopilot upload" -ForegroundColor Red
         }
-        else
-        {
+        else {
             try {
-                # Get auth token
                 Write-Host "Getting authorization token..." -ForegroundColor Yellow
                 $authToken = Get-AuthToken -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret
-                
-                # Upload device to Autopilot
+
                 Write-Host "Adding device to Autopilot..." -ForegroundColor Yellow
                 $importedDevice = Add-AutopilotImportedDevice -SerialNumber $serial -HardwareHash $hash -GroupTag $GroupTag -AuthToken $authToken
-                
-                #Check if device already exists in Autopilot
+
                 $device = Get-AutopilotDevice -Serial $serial -AuthToken $authToken
                 if ($device) {
-                    #Device already exists in Autopilot
                     Write-Host "Device already exists in Autopilot with SerialNumber: $serial" -ForegroundColor Green
                 }
                 else {
                     if ($importedDevice) {
                         Write-Host "Device added successfully with ID: $($importedDevice.id)" -ForegroundColor Green
-                        
-                        # Wait for processing to complete
                         Write-Host "Waiting for import to complete..." -ForegroundColor Yellow
                         $processingComplete = $false
                         $maxRetries = 20
                         $retryCount = 0
-                        
                         while (-not $processingComplete -and $retryCount -lt $maxRetries) {
                             Start-Sleep -Seconds 15
                             $device = Get-AutopilotImportedDevice -Id $importedDevice.id -AuthToken $authToken
-                            
                             if ($device.state.deviceImportStatus -eq "complete") {
                                 $processingComplete = $true
                                 Write-Host "Import completed successfully!" -ForegroundColor Green
                                 Write-Host "Device Registration ID: $($device.state.deviceRegistrationId)" -ForegroundColor Cyan
                             }
                             elseif ($device.state.deviceImportStatus -eq "error") {
-                                Write-Host "Import failed with error: $($device.state.deviceErrorCode) - $($device.state.deviceErrorName)" -ForegroundColor Red
+                                Write-Host "Import failed: $($device.state.deviceErrorCode) - $($device.state.deviceErrorName)" -ForegroundColor Red
                                 break
                             }
                             else {
@@ -323,7 +257,6 @@ If (Test-Path $PSScriptRoot\OA3.xml)
                                 $retryCount++
                             }
                         }
-                        
                         if (-not $processingComplete) {
                             Write-Host "Import did not complete within the expected time." -ForegroundColor Yellow
                         }
@@ -336,15 +269,13 @@ If (Test-Path $PSScriptRoot\OA3.xml)
         }
     }
     else {
-        Write-Host "Skipping Autopilot upload. Use -UploadToAutopilot switch with required parameters to upload." -ForegroundColor Yellow
+        Write-Host "Skipping Autopilot upload." -ForegroundColor Yellow
     }
 }
-else
-{
+else {
     Write-Host "No Hardware Hash found" -ForegroundColor Red
     Pop-Location
     exit 1
 }
 
-# Return to original directory
 Pop-Location
