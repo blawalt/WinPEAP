@@ -1,9 +1,8 @@
-[CmdletBinding()]
 param(
-    [Parameter(Mandatory)] [string] $TenantId,
-    [Parameter(Mandatory)] [string] $AppId,
-    [Parameter(Mandatory)] [string] $AppSecret,
-    [Parameter(Mandatory)] [string] $GroupTag,
+    [Parameter(Mandatory)]        [string] $TenantId,
+    [Parameter(Mandatory)]        [string] $AppId,
+    [Parameter(Mandatory)]        [string] $AppSecret,
+    [Parameter(Mandatory=$false)] [string] $GroupTag = '',
     [string] $Ref = 'prod'
 )
 
