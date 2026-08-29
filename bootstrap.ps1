@@ -43,8 +43,8 @@ if ($key) {
 }
 
 # Remove the staged unattend
-Remove-Item C:\Windows\Panther\unattend.xml, C:\Windows\Panther\unattend\unattend.xml -Force -ErrorAction SilentlyContinue
-
+$panther = Join-Path $env:WINDIR 'Panther'
+Remove-Item (Join-Path $panther 'unattend.xml'), (Join-Path $panther 'unattend\unattend.xml') -Force -ErrorAction SilentlyContinue
 "[$(Get-Date -Format o)] SetupComplete done"
 '@
 
@@ -118,8 +118,7 @@ try {
     # ---- 3) find the applied OS drive ----
     $t = 'C:'
     if (-not (Test-Path "$t\Windows\System32\ntoskrnl.exe")) {
-        $t = ((Get-Volume | Where-Object { $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\Windows\System32\ntoskrnl.exe") } |
-                Select-Object -First 1).DriveLetter) + ':'
+    $t = ((Get-Volume | Where-Object { $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\Windows\System32\ntoskrnl.exe") } | Select-Object -First 1).DriveLetter) + ':'
     }
     Write-Host "Applied OS drive: $t"
 

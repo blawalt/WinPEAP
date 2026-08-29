@@ -34,6 +34,7 @@ function Invoke-WinPEAPBuild {
     $dst = Join-Path $build.FullName 'bootmedia\WinPEStartup\Files'
     New-Item $dst -ItemType Directory -Force | Out-Null
     robocopy $src $dst /E /PURGE /NFL /NDL /NJH /NJS | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "robocopy failed (exit code $LASTEXITCODE) copying '$src' -> '$dst'" }
     Write-Host "Staged startup files -> $($build.Name)" -ForegroundColor Green
 
     switch ($Media) {
