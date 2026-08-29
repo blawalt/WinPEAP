@@ -27,6 +27,7 @@ Install-Module -Name OSD                          # baked into the boot image by
 
 Install-OSDeploySoftware -Name 'adk-25h2' -Force  # Windows ADK + WinPE add-on
 Update-OSDeployCoreDrivers                        # WinPE drivers
+Build-OSDeployBoot                                # run once, Cancel the picker to seed the stock build profile
 ```
 
 (`Invoke-OSDeployHydration` does all this plus a full Windows OS import, but it's interactive —

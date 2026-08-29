@@ -2,24 +2,25 @@
 #requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Layers the WinPEAP Autopilot solution onto an existing OSDeployCore build box.
+    Layers the WinPEAP Autopilot solution onto a prepared OSDeployCore build box.
     Run in an elevated PowerShell 7 session - the OSDeploy V2 build tooling requires pwsh.
 
 .DESCRIPTION
-    Prerequisite: the build box is already prepared with Segura's Invoke-OSDeployHydration
-    (installs the ADK, imports a Windows OS + WinRE, pulls WinPE drivers, proves a stock
-    Build-OSDeployBoot works). This script only adds the WinPEAP-specific pieces on top,
-    using the documented customization surface (build-profiles / winpe-profiles / WinPEStartup\Files):
+    Prerequisites (see docs/OSDCloud-V2.md): OSDCloud + OSDeploy + OSD modules installed, the
+    Windows ADK installed, Update-OSDeployCoreDrivers run, and at least one stock build profile
+    seeded (run Build-OSDeployBoot once and Cancel the profile picker to create 'OSDeploy.json').
+
+    This script only adds the WinPEAP-specific pieces, using the documented customization surface:
 
         OSDRepo\winpe-startup-files\        config.json + OA3 tooling + baked script fallbacks
         OSDRepo\winpe-profiles\<name>.json  the WinPEStartup profile
-        OSDRepo\build-profiles\amd64\<name>.json   (WinPEStartupProfile [+ WinPEDriver])
+        OSDRepo\build-profiles\amd64\<name>.json   seeded from the stock profile, WinPEStartupProfile overridden
         OSDRepo\Invoke-WinPEAPBuild.ps1     build + stage + package wrapper
 
     Then:  Invoke-WinPEAPBuild -BuildName <name> -Media USB
 
 .EXAMPLE
-    iwr https://raw.githubusercontent.com/blawalt/WinPEAP/prod/Initialize-WinPEAP.ps1 -OutFile Initialize-WinPEAP.ps1
+    iwr https://raw.githubusercontent.com/blawalt/WinPEAP/main/Initialize-WinPEAP.ps1 -OutFile Initialize-WinPEAP.ps1
     .\Initialize-WinPEAP.ps1 -AuthMode DeviceCode
 
 .EXAMPLE
@@ -27,18 +28,19 @@
 #>
 [CmdletBinding()]
 param(
-    [string]   $Repo         = 'blawalt/WinPEAP',   # your fork, if you forked
-    [string]   $Ref          = 'main',              # the branch/tag you pin your media to
-    [string]   $OSDeployRoot  = 'C:\ProgramData\OSDeployCore\OSDRepo',
-    [string]   $ProfileName   = 'Autopilot',
-    [string]   $BuildName     = 'AP',
-    [ValidateSet('Fetch','Loader','Baked')]    [string]   $ProfileStyle = 'Fetch',
-    [ValidateSet('ClientSecret','DeviceCode')] [string]   $AuthMode     = 'DeviceCode',
-    [string[]] $WinPEDriver    = @('Dell','USB'),
-    [switch]   $Drivers,          # off by default - Invoke-OSDeployHydration already pulled WinPE drivers
-    [string]   $TenantId,
-    [string]   $AppId,
-    [string]   $AppSecret
+    [string] $Repo         = 'blawalt/WinPEAP',   # your fork, if you forked
+    [string] $Ref          = 'main',              # the branch/tag you pin your media to
+    [string] $OSDeployRoot  = 'C:\ProgramData\OSDeployCore\OSDRepo',
+    [string] $ProfileName   = 'Autopilot',
+    [string] $BuildName     = 'AP',
+    [ValidateSet('Fetch','Loader','Baked')]    [string] $ProfileStyle = 'Fetch',
+    [ValidateSet('ClientSecret','DeviceCode')] [string] $AuthMode     = 'DeviceCode',
+    [string] $SeedProfile,                        # build profile to seed AP.json from (default: OSDeploy.json)
+    [string] $TimeZone,                           # override SetTimeZone in the build profile (else inherit the seed's)
+    [switch] $NoWallpaper,                        # clear WinPECustomWallpaper in the build profile
+    [string] $TenantId,
+    [string] $AppId,
+    [string] $AppSecret
 )
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
@@ -50,20 +52,26 @@ Say "`n=== Initialize-WinPEAP  ($Repo@$Ref) ===`n" Cyan
 
 # ---------- 1. preflight ----------
 if (-not (Get-Command Build-OSDeployBoot -ErrorAction SilentlyContinue)) {
-    throw "Build-OSDeployBoot not found. Prepare this build box first with Segura's Invoke-OSDeployHydration (https://www.osdeploy.com/osdeploy-guide/osdeploy-hydration)."
-}
-$bootRoot = Join-Path (Split-Path $OSDeployRoot -Parent) 'boot'
-if (-not (Test-Path $bootRoot)) {
-    Say "WARN: $bootRoot does not exist yet - run Invoke-OSDeployHydration if a stock build has never succeeded." Yellow
+    throw "Build-OSDeployBoot not found. Install the OSDeploy module (Install-Module OSDeploy -AllowPrerelease)."
 }
 $pcp = 'C:\Windows\System32\PCPKsp.dll'
 if (-not (Test-Path $pcp)) { throw "PCPKsp.dll not found in System32 on this build box." }
 $adkOa3 = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Licensing\OA30\oa3tool.exe" -ErrorAction SilentlyContinue
-if ($Drivers -and -not (Get-Command Save-WinPECloudDriver -ErrorAction SilentlyContinue)) {
-    if ((Read-Host '-Drivers requested but the OSD module is missing. Install now? [Y/n]') -ne 'n') { Install-Module OSD -Force -Scope AllUsers }
-    else { throw "OSD module required for -Drivers." }
+
+$bpDir = Join-Path $OSDeployRoot 'build-profiles\amd64'
+$seed  = if ($SeedProfile) {
+    if (Test-Path $SeedProfile) { Get-Item $SeedProfile } else { Get-Item (Join-Path $bpDir $SeedProfile) }
+} elseif (Test-Path (Join-Path $bpDir "$BuildName.json")) {
+    Get-Item (Join-Path $bpDir "$BuildName.json")           # already have our own - reuse it as the base
+} elseif (Test-Path (Join-Path $bpDir 'OSDeploy.json')) {
+    Get-Item (Join-Path $bpDir 'OSDeploy.json')
+} else {
+    Get-ChildItem $bpDir -Filter '*.json' -ErrorAction SilentlyContinue | Select-Object -First 1
 }
-Say "preflight OK" Green
+if (-not $seed) {
+    throw "No build profile found in $bpDir to seed from. Run 'Build-OSDeployBoot' once and press Cancel at the profile picker to create a stock profile, then re-run this."
+}
+Say "preflight OK  (seed profile: $($seed.Name))" Green
 
 # ---------- 2. inputs ----------
 if (-not $TenantId) { $TenantId = Read-Host 'Entra Tenant ID (guid)' }
@@ -75,10 +83,7 @@ if ($AuthMode -eq 'ClientSecret' -and -not $AppSecret) {
 # ---------- 3. folders ----------
 $profDir  = Join-Path $OSDeployRoot 'winpe-profiles'
 $filesDir = Join-Path $OSDeployRoot 'winpe-startup-files'
-$drvDir   = Join-Path $OSDeployRoot 'winpe-drivers'
-$bpDir    = Join-Path $OSDeployRoot 'build-profiles\amd64'
 $profDir,$filesDir,$bpDir | ForEach-Object { New-Item $_ -ItemType Directory -Force | Out-Null }
-if ($Drivers) { New-Item $drvDir -ItemType Directory -Force | Out-Null }
 
 # ---------- 4. config.json ----------
 $cfg = [ordered]@{ Repo = $Repo; Ref = $Ref; TenantId = $TenantId; AppId = $AppId; AuthMode = $AuthMode }
@@ -96,7 +101,7 @@ Fetch 'input.xml' (Join-Path $filesDir 'input.xml')
 # ---------- 6. scripts (baked fallback / primary in Baked+Loader) ----------
 foreach ($s in 'bootstrap.ps1','4kAutopilotHashUpload.ps1','Startup.ps1') {
     try { Fetch $s (Join-Path $filesDir $s); Say "staged $s" Green }
-    catch { Say "WARN could not download $s" Yellow }
+    catch { Say "WARN could not download $s (does $Repo@$Ref have it?)" Yellow }
 }
 
 # ---------- 7. startup profile ----------
@@ -109,24 +114,18 @@ switch ($ProfileStyle) {
     ConvertTo-Json | Set-Content (Join-Path $profDir "$ProfileName.json") -Encoding UTF8
 Say "winpe-profiles\$ProfileName.json  (style=$ProfileStyle)" Green
 
-# ---------- 8. build profile ----------
-$bp = Join-Path $bpDir "$BuildName.json"
-$o  = if (Test-Path $bp) { Get-Content $bp -Raw | ConvertFrom-Json } else { [pscustomobject]@{ Architecture = 'amd64' } }
+# ---------- 8. build profile (seed from stock so all required fields carry over) ----------
+$o = Get-Content $seed.FullName -Raw | ConvertFrom-Json
 $o | Add-Member NoteProperty WinPEStartupProfile (Join-Path $profDir "$ProfileName.json") -Force
-if ($Drivers) { $o | Add-Member NoteProperty WinPEDriver $drvDir -Force }
-$o | ConvertTo-Json -Depth 5 | Set-Content $bp -Encoding UTF8
-Say "build-profiles\amd64\$BuildName.json upserted" Green
+if ($TimeZone)     { $o | Add-Member NoteProperty SetTimeZone $TimeZone -Force }
+if ($NoWallpaper)  { $o | Add-Member NoteProperty WinPECustomWallpaper $null -Force }
+$o | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $bpDir "$BuildName.json") -Encoding UTF8
+Say "build-profiles\amd64\$BuildName.json  (seeded from $($seed.Name); WinPEStartupProfile -> $ProfileName.json)" Green
 
-# ---------- 9. optional extra drivers ----------
-if ($Drivers) {
-    Say "Save-WinPECloudDriver -CloudDriver $($WinPEDriver -join ',') ..." Cyan
-    Save-WinPECloudDriver -CloudDriver $WinPEDriver -Path $drvDir
-}
-
-# ---------- 10. build wrapper ----------
+# ---------- 9. build wrapper ----------
 try { Fetch 'Invoke-WinPEAPBuild.ps1' (Join-Path $OSDeployRoot 'Invoke-WinPEAPBuild.ps1') } catch {}
 
-# ---------- 11. summary ----------
+# ---------- 10. summary ----------
 Say "`n=== Done ===" Cyan
 Say "Wrote:" Cyan
 Say "  $filesDir\   (config.json, oa3tool.exe, PCPKsp.dll, oa3.cfg, input.xml, *.ps1)"
@@ -148,5 +147,5 @@ if ($AuthMode -eq 'ClientSecret') {
 }
 Say "`nNext:" Cyan
 Say "  . $OSDeployRoot\Invoke-WinPEAPBuild.ps1"
-Say "  Invoke-WinPEAPBuild -BuildName $BuildName -Media USB"
+Say "  Invoke-WinPEAPBuild -BuildName $BuildName -Media USB     # pick '$BuildName' at the profile picker"
 Say ""

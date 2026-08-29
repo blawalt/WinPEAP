@@ -68,8 +68,16 @@ Install-Module -Name OSDeploy -AllowPrerelease    # Build-OSDeployBoot etc. (gal
 Install-Module -Name OSD                          # Build-OSDeployBoot bakes this into the boot image
 
 Install-OSDeploySoftware -Name 'adk-25h2' -Force  # Windows ADK + WinPE add-on (adjust the ADK name to taste)
-Update-OSDeployCoreDrivers                        # WinPE network / storage / wifi drivers
+Update-OSDeployCoreDrivers                        # WinPE network / storage / wifi drivers -> winpe-drivers\amd64\*
+
+Build-OSDeployBoot                                # run once, press Cancel at the profile picker to seed
+                                                  # build-profiles\amd64\OSDeploy.json (the stock profile)
 ```
+
+`Initialize-WinPEAP.ps1` **seeds its build profile (`AP.json`) from that stock `OSDeploy.json`**
+and only overrides `WinPEStartupProfile` — so `Languages`, `SetTimeZone`, `WinPEMediaScript`,
+the driver paths from `Update-OSDeployCoreDrivers`, etc. all carry over. Without a stock profile
+to seed from, `Build-OSDeployBoot` fails on an empty `SetTimeZone`.
 
 **About `Invoke-OSDeployHydration`:** it does all of the above **plus** downloading a Windows
 Enterprise ESD and importing it as a full Windows OS + WinRE source — but it is *interactive*
@@ -154,10 +162,14 @@ iwr https://raw.githubusercontent.com/blawalt/WinPEAP/main/Initialize-WinPEAP.ps
 |---|---|---|
 | `-ProfileStyle` | `Fetch` | `Fetch` = profile fetches bootstrap directly. `Loader` = profile calls `X:\Startup.ps1` (use if your build's JSON parser rejects a URL). `Baked` = no runtime fetch (air-gapped). |
 | `-AuthMode` | `DeviceCode` | `DeviceCode` or `ClientSecret` |
-| `-Drivers` | off | also run `Save-WinPECloudDriver` and set `WinPEDriver` (Hydration already pulls the common packs) |
-| `-WinPEDriver` | `Dell,USB` | vendors passed to `Save-WinPECloudDriver` when `-Drivers` is set |
 | `-Repo` | `blawalt/WinPEAP` | repo the media pulls from at runtime (set to your fork); written to `config.json` |
 | `-Ref` | `main` | branch/tag the media pulls from at runtime; written to `config.json` |
+| `-SeedProfile` | `OSDeploy.json` | build profile to copy as the base for `AP.json` (name in `build-profiles\amd64\` or a full path) |
+| `-TimeZone` | *(inherit seed's)* | override `SetTimeZone`, e.g. `'Eastern Standard Time'` |
+| `-NoWallpaper` | off | clear `WinPECustomWallpaper` (drop the Recast branding) |
+
+Drivers are **not** an option here — `Update-OSDeployCoreDrivers` (a prereq) populates them and
+the stock profile references them; `Initialize-WinPEAP.ps1` inherits that.
 
 ## Part C — build the media
 
@@ -165,6 +177,9 @@ iwr https://raw.githubusercontent.com/blawalt/WinPEAP/main/Initialize-WinPEAP.ps
 . C:\ProgramData\OSDeployCore\OSDRepo\Invoke-WinPEAPBuild.ps1
 Invoke-WinPEAPBuild -BuildName AP -Media ISO      # ISO | USB | Both
 ```
+
+`Build-OSDeployBoot` pops a GUI profile picker — **select `AP`**. If `Get-Help Build-OSDeployBoot -Full`
+shows a non-interactive flag (e.g. `-Auto`), pass it through: `Invoke-WinPEAPBuild -BuildArgs @{ Auto = $true }`.
 
 `Invoke-WinPEAPBuild` runs `Build-OSDeployBoot`, re-stages `winpe-startup-files\` into the fresh
 build (Build regenerates that tree each run), then packages. **Always build through this wrapper**

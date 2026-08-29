@@ -11,6 +11,11 @@
     Usage:
         . C:\ProgramData\OSDeployCore\OSDRepo\Invoke-WinPEAPBuild.ps1
         Invoke-WinPEAPBuild -BuildName AP -Media USB
+
+    Build-OSDeployBoot shows a GUI profile picker unless you give it a non-interactive
+    argument (check: Get-Help Build-OSDeployBoot -Full). Pass whatever that turns out to be
+    via -BuildArgs, e.g.  Invoke-WinPEAPBuild -BuildArgs @{ Auto = $true }
+    Otherwise just select the '<BuildName>' profile when the picker appears.
 #>
 function Invoke-WinPEAPBuild {
     [CmdletBinding()]
@@ -18,15 +23,19 @@ function Invoke-WinPEAPBuild {
         [string] $BuildName    = 'AP',
         [string] $OSDeployRoot = 'C:\ProgramData\OSDeployCore\OSDRepo',
         [string] $BootRoot     = 'C:\ProgramData\OSDeployCore\boot',
-        [ValidateSet('ISO','USB','Both','None')] [string] $Media = 'ISO'
+        [ValidateSet('ISO','USB','Both','None')] [string] $Media = 'ISO',
+        [hashtable] $BuildArgs = @{}
     )
     $ErrorActionPreference = 'Stop'
 
     $src = Join-Path $OSDeployRoot 'winpe-startup-files'
     if (-not (Test-Path $src)) { throw "Startup-files source not found: $src  (run Initialize-WinPEAP.ps1 first)" }
+    if (-not (Test-Path (Join-Path $OSDeployRoot "build-profiles\amd64\$BuildName.json"))) {
+        throw "Build profile build-profiles\amd64\$BuildName.json not found (run Initialize-WinPEAP.ps1 first)"
+    }
 
     Write-Host "Build-OSDeployBoot -Name $BuildName ..." -ForegroundColor Cyan
-    Build-OSDeployBoot -Name $BuildName
+    Build-OSDeployBoot -Name $BuildName @BuildArgs
 
     $build = Get-ChildItem $BootRoot -Directory -ErrorAction Stop |
              Where-Object Name -like "*$BuildName*" |
