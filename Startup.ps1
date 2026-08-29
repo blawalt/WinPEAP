@@ -7,7 +7,7 @@
 
     Use this when your WinPEStartup profile JSON parser rejects a URL on the InvokeMainCommand
     line (some builds do). Otherwise the profile can fetch bootstrap.ps1 directly and this
-    file is unnecessary - see hydrate.ps1 -ProfileStyle.
+    file is unnecessary - see Initialize-WinPEAP.ps1 -ProfileStyle.
 #>
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
