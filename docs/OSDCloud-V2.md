@@ -1,0 +1,187 @@
+> For the legacy `OSD` module see [OSDCloud-V1.md](OSDCloud-V1.md).
+
+# WinPE Autopilot Provisioning — OSDCloud V2
+
+OSDCloud V2 replaces V1's variable-driven wrapper with a **task-sequence workflow engine** and
+**JSON startup profiles** (`WinPEStartup`). Some V1 conveniences — the `SetupComplete` builder,
+OEM key activation, Autopilot registration — are **not yet ported**, so this kit fills those gaps.
+
+---
+
+## Architecture
+
+```
+BOOT MEDIA  (held by a small number of technicians)
+  WinPEStartup\Profiles\Autopilot.json     one-line launcher
+  WinPEStartup\Files\   -> copied to X:\ at boot
+    config.json          TenantId / AppId / AuthMode [/ AppSecret]   <- media only, never in git
+    oa3tool.exe, PCPKsp.dll, oa3.cfg, input.xml   OA3Tool 4k-hash deps (must be baked)
+    bootstrap.ps1, 4kAutopilotHashUpload.ps1, Startup.ps1   baked fallback copies
+
+GITHUB  (public repo, no secrets)  — fetched at runtime, pinned to a branch/tag
+    bootstrap.ps1              hash upload -> OSDCloud workflow -> SetupComplete
+    4kAutopilotHashUpload.ps1  4k hash + Graph upload (client-secret or device-code auth)
+```
+
+You edit + test on `main`; PR `main -> prod` to release. The media only re-flashes when
+`config.json`, the profile, or the OA3 binaries change — script logic ships through GitHub.
+
+---
+
+## Boot flow
+
+```
+WinPE starts -> Recast initializes network -> profile runs InvokeMainCommand
+  -> (Startup.ps1 or the profile) fetches bootstrap.ps1 from GitHub@<ref>   (baked fallback if offline)
+  -> bootstrap.ps1:
+       reads X:\config.json
+       prompts:  Group Tag  [1 = 1:1 Assigned / 2 = Shared / 3 = manual]
+       1) 4kAutopilotHashUpload.ps1  -> OA3Tool hash -> Graph import
+          (DeviceCode: operator signs in at microsoft.com/devicelogin here)
+       2) OSDCloud V2 workflow       -> download + apply Windows image
+       3) writes C:\Windows\Setup\Scripts\SetupComplete.{cmd,ps1}
+       4) removes the workflow's duplicate PSReadLine (keeps inbox 2.0.0)
+       5) copies X:\Windows\Temp\*.log to any media \OSDCloudLogs folder
+  -> reboot
+Windows setup -> specialize -> SetupComplete.cmd runs (OEM activation, unattend cleanup) -> OOBE / Autopilot
+```
+
+`SetupComplete.cmd` is native Windows: if the file exists it runs once, as SYSTEM, at the end
+of setup — **before** the Autopilot ESP. Right place for machine prep; not for app installs
+(that's Intune's job).
+
+---
+
+## Prerequisites
+
+**Prepare the build box with [`Invoke-OSDeployHydration`](https://www.osdeploy.com/osdeploy-guide/osdeploy-hydration)** (Segura's).
+It installs the ADK + 7-Zip, downloads the current Windows Enterprise ESD, imports it as a
+Windows OS + WinRE source, pulls vendor/Microsoft WinPE drivers, and runs `Build-OSDeployBoot`
+once to prove a stock ISO builds. This repo does **not** re-implement any of that — it layers
+the Autopilot pieces on top using the documented `build-profiles` / `winpe-profiles` /
+`WinPEStartup\Files` customization surface.
+
+You also need:
+
+- An **Entra app registration** — see the auth table below
+- `Install-Module OSD` *only* if you want `Initialize-WinPEAP.ps1 -Drivers` to pull extra
+  WinPE drivers (Hydration already covers the common ones)
+
+### Authentication modes
+
+| | `ClientSecret` | `DeviceCode` |
+|---|---|---|
+| Client type | Confidential | Public — *Authentication → Allow public client flows = Yes* |
+| Graph permission | `DeviceManagementServiceConfig.ReadWrite.All` — **Application** | same scope — **Delegated** |
+| Admin consent | Required | Required |
+| Secret on media | Yes (in `config.json`) | **None** — `config.json` holds only Tenant ID + App ID |
+| Who needs rights | The app | The signing-in tech (**Intune Administrator** role) |
+| Unattended | Yes | No — interactive sign-in each deployment |
+
+One app registration can carry both permission types if you want a single App ID.
+
+Test the app registration from your desk before building:
+
+```powershell
+# ClientSecret
+$b = @{client_id=$AppId;scope='https://graph.microsoft.com/.default';client_secret=$AppSecret;grant_type='client_credentials'}
+$t = (Invoke-RestMethod "https://login.microsoftonline.com/$TenantId/oauth2/v2.0/token" -Method POST -Body $b).access_token
+Invoke-RestMethod 'https://graph.microsoft.com/v1.0/deviceManagement/importedWindowsAutopilotDeviceIdentities' -Headers @{Authorization="Bearer $t"}
+```
+
+Empty result = good. 401/403 = fix permissions first.
+
+---
+
+## Part A — repo (one time)
+
+1. Ensure `Initialize-WinPEAP.ps1`, `Invoke-WinPEAPBuild.ps1`, `bootstrap.ps1`,
+   `4kAutopilotHashUpload.ps1`, `Startup.ps1`, `oa3tool.exe`, `oa3.cfg`, `input.xml` are on `main`.
+2. Create branch **`prod`** from `main`.
+3. Verify `https://raw.githubusercontent.com/blawalt/WinPEAP/prod/Initialize-WinPEAP.ps1` loads (not 404).
+
+## Part B — initialize the WinPEAP layer
+
+Run `Invoke-OSDeployHydration` first if you haven't (see Prerequisites). Then:
+
+```powershell
+iwr https://raw.githubusercontent.com/blawalt/WinPEAP/prod/Initialize-WinPEAP.ps1 -OutFile Initialize-WinPEAP.ps1
+
+# device code (no secret on media) - prompts for Tenant ID + App ID
+.\Initialize-WinPEAP.ps1 -AuthMode DeviceCode -BuildName AP
+
+# or client secret
+.\Initialize-WinPEAP.ps1 -AuthMode ClientSecret -TenantId <guid> -AppId <guid> -AppSecret <value> -BuildName AP
+```
+
+`Initialize-WinPEAP.ps1` options:
+
+| Param | Default | Notes |
+|---|---|---|
+| `-ProfileStyle` | `Fetch` | `Fetch` = profile fetches bootstrap directly. `Loader` = profile calls `X:\Startup.ps1` (use if your build's JSON parser rejects a URL). `Baked` = no runtime fetch (air-gapped). |
+| `-AuthMode` | `DeviceCode` | `DeviceCode` or `ClientSecret` |
+| `-Drivers` | off | also run `Save-WinPECloudDriver` and set `WinPEDriver` (Hydration already pulls the common packs) |
+| `-WinPEDriver` | `Dell,USB` | vendors passed to `Save-WinPECloudDriver` when `-Drivers` is set |
+| `-Ref` | `prod` | branch/tag the media pulls from at runtime |
+
+## Part C — build the media
+
+```powershell
+. C:\ProgramData\OSDeployCore\OSDRepo\Invoke-WinPEAPBuild.ps1
+Invoke-WinPEAPBuild -BuildName AP -Media ISO      # ISO | USB | Both
+```
+
+`Invoke-WinPEAPBuild` runs `Build-OSDeployBoot`, re-stages `winpe-startup-files\` into the fresh
+build (Build regenerates that tree each run), then packages. **Always build through this wrapper**
+so the startup files aren't lost.
+
+## Part D — test
+
+### VM first (Gen2, Secure Boot, vTPM, External vSwitch)
+
+Watch the WinPE console: `config.json` found → Group Tag prompt → bootstrap downloaded (not
+"using baked") → `Hardware Hash successfully retrieved` → `Device added successfully with ID` →
+device shows in **Intune → Devices → Enrollment → Devices** (delete the test entry after) →
+workflow applies image → reboot → OOBE.
+
+After OOBE: `Get-ChildItem 'C:\Program Files\WindowsPowerShell\Modules\PSReadLine'` → only `2.0.0`.
+
+VMs can't verify WinPE drivers or OEM activation — that's the hardware pass.
+
+### Real Dell
+
+At the WinPE prompt: `Get-NetAdapter | ? Status -eq 'Up'` and `ipconfig` — confirm an IP. After OOBE:
+
+- `cscript //nologo C:\Windows\System32\slmgr.vbs /dlv` → activated via firmware key
+- `C:\Windows\Temp\SetupComplete.log` → contains `OA3 firmware key installed`
+- `C:\Windows\Panther\unattend.xml` → gone
+
+## Part E — production
+
+Green run → PR `main → prod`, set `config.json` and `Startup.ps1` `$Ref` to `prod`, rebuild,
+re-flash the techs' sticks **once**. Thereafter: edit `main` → test → PR `main → prod`. No
+re-flash unless media-side files change.
+
+---
+
+## Appendix — V2 quirks this kit handles
+
+| Symptom | Cause | Handled by |
+|---|---|---|
+| PSReadLine loads twice / "Cannot load PSReadline module" | The `default` workflow's **"Update PowerShell Modules -Offline"** task `Save-Module`s every inbox module, dropping PSReadLine 2.4.x beside inbox 2.0.0 | `bootstrap.ps1` step 4 deletes any PSReadLine folder ≠ `2.0.0`. Cleaner long-term fix: `"skip": true` on that task in a custom workflow. |
+| Start Menu / console reads "Windows PowerShell 5.1" | Microsoft cosmetic rename in recent 24H2/25H2 LCUs. Not OSDCloud. | Nothing needed — differs only by patch level. |
+| OEM / firmware key not activated (V1 did this via `Set-WindowsOEMActivation`) | V2 has no OEM activation step | `bootstrap.ps1` writes `SetupComplete.ps1` calling `InstallProductKey` with `OA3xOriginalProductKey`. Requires deploying the edition the firmware key licenses (Pro). |
+| Profile fails to load: *"Invalid array passed in, ',' expected"* | Inline PowerShell with escaped quotes / a URL in the profile JSON breaks the parser | Keep `InvokeMainCommand` a single simple line. `-ProfileStyle Loader` moves all logic into `Startup.ps1`. |
+| `Add-WindowsCapability` RSAT → `0x800f0950` on non-domain devices | Device is managed (Autopatch/WUfB) with no policy allowing FoD from Windows Update | Intune Settings Catalog: **"Specify settings for optional component installation and component repair"** → Enabled + "Download… directly from Windows Update instead of WSUS". Assign to the Autopilot group. |
+
+## File reference
+
+| File | Where it runs | Notes |
+|---|---|---|
+| `Initialize-WinPEAP.ps1` | build box | layers config/profile/startup-files onto a hydrated OSDeployCore box |
+| `Invoke-WinPEAPBuild.ps1` | build box | build + stage + package wrapper |
+| `config.json` | media → `X:\` | secret/config; from `config.sample.json`; **git-ignored** |
+| `Startup.ps1` | WinPE | thin loader (only used with `-ProfileStyle Loader`) |
+| `bootstrap.ps1` | WinPE | orchestrator — the file you iterate on |
+| `4kAutopilotHashUpload.ps1` | WinPE | reusable hash + upload primitive (V1 + V2) |
+| `oa3tool.exe` / `oa3.cfg` / `input.xml` | WinPE (`X:\`) | OA3Tool + config |

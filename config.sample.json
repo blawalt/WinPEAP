@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy to config.json on the boot media only. NEVER commit config.json. Initialize-WinPEAP.ps1 writes this for you.",
+
+  "TenantId": "00000000-0000-0000-0000-000000000000",
+  "AppId":    "00000000-0000-0000-0000-000000000000",
+
+  "AuthMode": "DeviceCode",
+
+  "_ClientSecretExample": {
+    "AuthMode":  "ClientSecret",
+    "AppSecret": "the-client-secret-value-goes-here"
+  }
+}
