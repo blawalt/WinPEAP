@@ -59,17 +59,17 @@ if (-not (Test-Path $pcp)) { throw "PCPKsp.dll not found in System32 on this bui
 $adkOa3 = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\amd64\Licensing\OA30\oa3tool.exe" -ErrorAction SilentlyContinue
 
 $bpDir = Join-Path $OSDeployRoot 'build-profiles\amd64'
-$seed  = if ($SeedProfile) {
+# seed order: -SeedProfile  ->  OSDeploy.json  ->  first other *.json (but not our own AP.json)
+$seed = if ($SeedProfile) {
     if (Test-Path $SeedProfile) { Get-Item $SeedProfile } else { Get-Item (Join-Path $bpDir $SeedProfile) }
-} elseif (Test-Path (Join-Path $bpDir "$BuildName.json")) {
-    Get-Item (Join-Path $bpDir "$BuildName.json")           # already have our own - reuse it as the base
 } elseif (Test-Path (Join-Path $bpDir 'OSDeploy.json')) {
     Get-Item (Join-Path $bpDir 'OSDeploy.json')
 } else {
-    Get-ChildItem $bpDir -Filter '*.json' -ErrorAction SilentlyContinue | Select-Object -First 1
+    Get-ChildItem $bpDir -Filter '*.json' -ErrorAction SilentlyContinue |
+        Where-Object BaseName -ne $BuildName | Select-Object -First 1
 }
 if (-not $seed) {
-    throw "No build profile found in $bpDir to seed from. Run 'Build-OSDeployBoot' once and press Cancel at the profile picker to create a stock profile, then re-run this."
+    throw "No stock build profile in $bpDir to seed from. Run 'Build-OSDeployBoot' once and press Cancel at the profile picker to create 'OSDeploy.json', then re-run this (or pass -SeedProfile)."
 }
 Say "preflight OK  (seed profile: $($seed.Name))" Green
 
