@@ -1,7 +1,9 @@
+#requires -Version 7.0
 #requires -RunAsAdministrator
 <#
 .SYNOPSIS
     Layers the WinPEAP Autopilot solution onto an existing OSDeployCore build box.
+    Run in an elevated PowerShell 7 session - the OSDeploy V2 build tooling requires pwsh.
 
 .DESCRIPTION
     Prerequisite: the build box is already prepared with Segura's Invoke-OSDeployHydration

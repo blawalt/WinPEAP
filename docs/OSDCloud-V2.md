@@ -56,18 +56,30 @@ of setup — **before** the Autopilot ESP. Right place for machine prep; not for
 
 ## Prerequisites
 
-**Prepare the build box with [`Invoke-OSDeployHydration`](https://www.osdeploy.com/osdeploy-guide/osdeploy-hydration)** (Segura's).
-It installs the ADK + 7-Zip, downloads the current Windows Enterprise ESD, imports it as a
-Windows OS + WinRE source, pulls vendor/Microsoft WinPE drivers, and runs `Build-OSDeployBoot`
-once to prove a stock ISO builds. This repo does **not** re-implement any of that — it layers
-the Autopilot pieces on top using the documented `build-profiles` / `winpe-profiles` /
-`WinPEStartup\Files` customization surface.
+### Build box
 
-You also need:
+Everything here runs on the build box in an **elevated PowerShell 7 session** (`pwsh`, 7.6+ —
+the OSDeploy V2 tooling is a `pwsh` workflow; Windows PowerShell 5.1 is not supported for the
+build side). Install both modules:
+
+```powershell
+Install-Module -Name OSDCloud                    # the OSDCloud V2 deployment engine
+Install-Module -Name OSDeploy -AllowPrerelease   # Build-OSDeployBoot / Invoke-OSDeployHydration (gallery has prerelease only)
+```
+
+Then prepare the box once with **[`Invoke-OSDeployHydration`](https://www.osdeploy.com/osdeploy-guide/osdeploy-hydration)**
+(Segura's). It installs the ADK + 7-Zip, downloads the current Windows Enterprise ESD, imports
+it as a Windows OS + WinRE source, pulls vendor/Microsoft WinPE drivers, and runs
+`Build-OSDeployBoot` once to prove a stock ISO builds. This repo does **not** re-implement any
+of that — it layers the Autopilot pieces on top using the documented `build-profiles` /
+`winpe-profiles` / `WinPEStartup\Files` customization surface.
+
+Optionally: `Install-Module OSD` as well if you want `Initialize-WinPEAP.ps1 -Drivers` to pull
+extra WinPE drivers (Hydration already covers the common ones).
+
+### Tenant
 
 - An **Entra app registration** — see the auth table below
-- `Install-Module OSD` *only* if you want `Initialize-WinPEAP.ps1 -Drivers` to pull extra
-  WinPE drivers (Hydration already covers the common ones)
 
 ### Authentication modes
 
@@ -193,10 +205,13 @@ ships through GitHub; re-flash only when `config.json`, the profile, or the OA3 
 
 | File | Where it runs | Notes |
 |---|---|---|
-| `Initialize-WinPEAP.ps1` | build box | layers config/profile/startup-files onto a hydrated OSDeployCore box |
-| `Invoke-WinPEAPBuild.ps1` | build box | build + stage + package wrapper |
-| `config.json` | media → `X:\` | secret/config; from `config.sample.json`; **git-ignored** |
-| `Startup.ps1` | WinPE | thin loader (only used with `-ProfileStyle Loader`) |
-| `bootstrap.ps1` | WinPE | orchestrator — the file you iterate on |
-| `4kAutopilotHashUpload.ps1` | WinPE | reusable hash + upload primitive (V1 + V2) |
+| `Initialize-WinPEAP.ps1` | build box — **elevated pwsh 7** | layers config/profile/startup-files onto a hydrated OSDeployCore box |
+| `Invoke-WinPEAPBuild.ps1` | build box — **elevated pwsh 7** | build + stage + package wrapper |
+| `config.json` | media → `X:\` | Repo/Ref/tenant/auth; from `config.sample.json`; **git-ignored** |
+| `Startup.ps1` | WinPE — **Windows PowerShell 5.1** | thin loader (only used with `-ProfileStyle Loader`) |
+| `bootstrap.ps1` | WinPE — **Windows PowerShell 5.1** | orchestrator — the file you iterate on |
+| `4kAutopilotHashUpload.ps1` | WinPE — **Windows PowerShell 5.1** | reusable hash + upload primitive (V1 + V2) |
 | `oa3tool.exe` / `oa3.cfg` / `input.xml` | WinPE (`X:\`) | OA3Tool + config |
+
+> WinPE ships Windows PowerShell 5.1, so `bootstrap.ps1` / `Startup.ps1` /
+> `4kAutopilotHashUpload.ps1` are kept 5.1-compatible. Only the build-box scripts require 7.

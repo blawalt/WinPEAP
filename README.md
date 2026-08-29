@@ -17,11 +17,15 @@ Both use the same `4kAutopilotHashUpload.ps1`.
 
 ## Quick start (V2)
 
-**Prereq:** prepare the build box with Segura's hydration (installs the ADK, imports a Windows
-OS, pulls WinPE drivers, proves a stock build works):
+**Prereq:** on the build box, in an **elevated PowerShell 7** session (7.6+ — the OSDeploy V2
+tooling is a `pwsh` workflow), install the modules and run Segura's hydration (installs the ADK,
+imports a Windows OS, pulls WinPE drivers, proves a stock build works):
 
 ```powershell
-Invoke-OSDeployHydration          # https://www.osdeploy.com/osdeploy-guide/osdeploy-hydration
+Install-Module -Name OSDCloud                    # OSDCloud V2 engine
+Install-Module -Name OSDeploy -AllowPrerelease   # Build-OSDeployBoot / hydration (prerelease only on the gallery)
+
+Invoke-OSDeployHydration                         # https://www.osdeploy.com/osdeploy-guide/osdeploy-hydration
 ```
 
 Then add the WinPEAP Autopilot layer and build:

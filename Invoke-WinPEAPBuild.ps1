@@ -1,5 +1,7 @@
+#requires -Version 7.0
 <#
     Invoke-WinPEAPBuild - build + stage + package in one call.
+    Dot-source in an elevated PowerShell 7 session.
 
     Build-OSDeployBoot regenerates the boot\<name>\bootmedia tree on every run, so the
     WinPEStartup\Files content has to be re-staged from a canonical source afterwards.
