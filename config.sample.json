@@ -1,13 +1,17 @@
 {
   "_comment": "Copy to config.json on the boot media only. NEVER commit config.json. Initialize-WinPEAP.ps1 writes this for you.",
 
+  "Repo": "blawalt/WinPEAP",
+  "Ref":  "main",
+
   "TenantId": "00000000-0000-0000-0000-000000000000",
   "AppId":    "00000000-0000-0000-0000-000000000000",
 
   "AuthMode": "DeviceCode",
 
-  "_ClientSecretExample": {
-    "AuthMode":  "ClientSecret",
-    "AppSecret": "the-client-secret-value-goes-here"
+  "_notes": {
+    "Repo": "owner/name of the repo (or your fork) the media pulls scripts from at runtime",
+    "Ref":  "branch or tag you pin to - e.g. 'main', or your own 'stable' / a version tag",
+    "ClientSecretExample": { "AuthMode": "ClientSecret", "AppSecret": "the-client-secret-value" }
   }
 }

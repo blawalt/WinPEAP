@@ -13,12 +13,10 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Ref = 'prod'
+    [string] $Ref   # optional override; normally comes from X:\config.json
 )
 
 $ErrorActionPreference = 'Stop'
-$repo   = 'blawalt/WinPEAP'
-$base   = "https://raw.githubusercontent.com/$repo/$Ref"
 $logDir = 'X:\Windows\Temp'
 Start-Transcript (Join-Path $logDir 'bootstrap.log') -Append -Force | Out-Null
 
@@ -57,7 +55,7 @@ function Get-RepoScript {
     }
     $baked = Join-Path 'X:\' $Name
     if (Test-Path $baked) { Write-Warning "GitHub unreachable - using baked X:\$Name"; return $baked }
-    throw "Cannot obtain $Name from GitHub ($Ref) or X:\"
+    throw "Cannot obtain $Name from GitHub ($script:base) or X:\"
 }
 
 function Get-GroupTag {
@@ -88,6 +86,11 @@ try {
     if (-not (Test-Path 'X:\config.json')) { throw 'X:\config.json is missing from the boot media.' }
     $cfg = Get-Content 'X:\config.json' -Raw | ConvertFrom-Json
     $authMode = if ($cfg.AuthMode) { $cfg.AuthMode } else { 'ClientSecret' }
+
+    $repo = if ($cfg.Repo) { $cfg.Repo } else { 'blawalt/WinPEAP' }
+    $ref  = if ($Ref)      { $Ref }      elseif ($cfg.Ref) { $cfg.Ref } else { 'main' }
+    $base = "https://raw.githubusercontent.com/$repo/$ref"
+    Write-Host "  Source: $repo @ $ref" -ForegroundColor DarkGray
 
     # ---- group tag ----
     try   { $groupTag = Get-GroupTag }

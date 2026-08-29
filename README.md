@@ -27,12 +27,28 @@ Invoke-OSDeployHydration          # https://www.osdeploy.com/osdeploy-guide/osde
 Then add the WinPEAP Autopilot layer and build:
 
 ```powershell
-iwr https://raw.githubusercontent.com/blawalt/WinPEAP/prod/Initialize-WinPEAP.ps1 -OutFile Initialize-WinPEAP.ps1
+iwr https://raw.githubusercontent.com/blawalt/WinPEAP/main/Initialize-WinPEAP.ps1 -OutFile Initialize-WinPEAP.ps1
 .\Initialize-WinPEAP.ps1 -AuthMode DeviceCode      # prompts for Tenant ID + App ID, no secret on media
 
 . C:\ProgramData\OSDeployCore\OSDRepo\Invoke-WinPEAPBuild.ps1
 Invoke-WinPEAPBuild -BuildName AP -Media USB
 ```
+
+### Fork &amp; pin your own ref
+
+The booted media pulls `bootstrap.ps1` / `4kAutopilotHashUpload.ps1` from GitHub at runtime.
+**Which repo and which branch/tag** are stored in `config.json` on the media (never in git),
+written by `Initialize-WinPEAP.ps1`:
+
+```powershell
+# fork the repo, then:
+iwr https://raw.githubusercontent.com/<you>/WinPEAP/main/Initialize-WinPEAP.ps1 -OutFile Initialize-WinPEAP.ps1
+.\Initialize-WinPEAP.ps1 -Repo <you>/WinPEAP -Ref stable -AuthMode DeviceCode
+```
+
+Pin `-Ref` to a branch or tag **you** control (`main`, your own `stable`, a version tag) so a
+mid-day upstream push can't reach a tech mid-deployment. Changing the ref later = re-run
+`Initialize-WinPEAP.ps1 -Ref <new>` and rebuild the media.
 
 See [docs/OSDCloud-V2.md](docs/OSDCloud-V2.md) for the full walkthrough, the app‑registration
 checklist, and the VM → hardware test plan.

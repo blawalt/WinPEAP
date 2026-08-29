@@ -25,8 +25,8 @@
 #>
 [CmdletBinding()]
 param(
-    [string]   $Repo         = 'blawalt/WinPEAP',
-    [string]   $Ref          = 'prod',
+    [string]   $Repo         = 'blawalt/WinPEAP',   # your fork, if you forked
+    [string]   $Ref          = 'main',              # the branch/tag you pin your media to
     [string]   $OSDeployRoot  = 'C:\ProgramData\OSDeployCore\OSDRepo',
     [string]   $ProfileName   = 'Autopilot',
     [string]   $BuildName     = 'AP',
@@ -79,7 +79,7 @@ $profDir,$filesDir,$bpDir | ForEach-Object { New-Item $_ -ItemType Directory -Fo
 if ($Drivers) { New-Item $drvDir -ItemType Directory -Force | Out-Null }
 
 # ---------- 4. config.json ----------
-$cfg = [ordered]@{ TenantId = $TenantId; AppId = $AppId; AuthMode = $AuthMode }
+$cfg = [ordered]@{ Repo = $Repo; Ref = $Ref; TenantId = $TenantId; AppId = $AppId; AuthMode = $AuthMode }
 if ($AuthMode -eq 'ClientSecret') { $cfg.AppSecret = $AppSecret }
 $cfg | ConvertTo-Json | Set-Content (Join-Path $filesDir 'config.json') -Encoding UTF8
 Say "config.json written ($AuthMode$(if($AuthMode -eq 'DeviceCode'){' - no secret on media'}))" Green
@@ -99,9 +99,9 @@ foreach ($s in 'bootstrap.ps1','4kAutopilotHashUpload.ps1','Startup.ps1') {
 
 # ---------- 7. startup profile ----------
 switch ($ProfileStyle) {
-    'Fetch'  { $cmd = "iwr -UseBasicParsing $raw/bootstrap.ps1 -OutFile X:\bootstrap-new.ps1 -EA SilentlyContinue; if (Test-Path X:\bootstrap-new.ps1) { & X:\bootstrap-new.ps1 -Ref $Ref } else { & X:\bootstrap.ps1 -Ref $Ref }; wpeutil reboot" }
+    'Fetch'  { $cmd = "iwr -UseBasicParsing $raw/bootstrap.ps1 -OutFile X:\bootstrap-new.ps1 -EA SilentlyContinue; if (Test-Path X:\bootstrap-new.ps1) { & X:\bootstrap-new.ps1 } else { & X:\bootstrap.ps1 }; wpeutil reboot" }
     'Loader' { $cmd = "& X:\Startup.ps1" }
-    'Baked'  { $cmd = "& X:\bootstrap.ps1 -Ref $Ref; wpeutil reboot" }
+    'Baked'  { $cmd = "& X:\bootstrap.ps1; wpeutil reboot" }
 }
 [ordered]@{ InvokeMainCommand = @($cmd); InvokeMainCommandNoExit = $true } |
     ConvertTo-Json | Set-Content (Join-Path $profDir "$ProfileName.json") -Encoding UTF8
@@ -126,6 +126,8 @@ try { Fetch 'Invoke-WinPEAPBuild.ps1' (Join-Path $OSDeployRoot 'Invoke-WinPEAPBu
 
 # ---------- 11. summary ----------
 Say "`n=== Done ===" Cyan
+Say "Runtime source pinned to:  $Repo @ $Ref   (change with -Repo / -Ref, then rebuild)" Cyan
+Say ""
 Say "App registration checklist ($AuthMode):" Cyan
 if ($AuthMode -eq 'ClientSecret') {
     Say "  - Graph API permission: DeviceManagementServiceConfig.ReadWrite.All  (Application) + admin consent"

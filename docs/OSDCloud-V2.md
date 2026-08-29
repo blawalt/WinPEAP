@@ -14,17 +14,19 @@ OEM key activation, Autopilot registration — are **not yet ported**, so this k
 BOOT MEDIA  (held by a small number of technicians)
   WinPEStartup\Profiles\Autopilot.json     one-line launcher
   WinPEStartup\Files\   -> copied to X:\ at boot
-    config.json          TenantId / AppId / AuthMode [/ AppSecret]   <- media only, never in git
+    config.json          Repo / Ref / TenantId / AppId / AuthMode [/ AppSecret]   <- media only, never in git
     oa3tool.exe, PCPKsp.dll, oa3.cfg, input.xml   OA3Tool 4k-hash deps (must be baked)
     bootstrap.ps1, 4kAutopilotHashUpload.ps1, Startup.ps1   baked fallback copies
 
-GITHUB  (public repo, no secrets)  — fetched at runtime, pinned to a branch/tag
+GITHUB  <Repo> @ <Ref>  (no secrets)  — fetched at runtime; Repo + Ref come from config.json
     bootstrap.ps1              hash upload -> OSDCloud workflow -> SetupComplete
     4kAutopilotHashUpload.ps1  4k hash + Graph upload (client-secret or device-code auth)
 ```
 
-You edit + test on `main`; PR `main -> prod` to release. The media only re-flashes when
-`config.json`, the profile, or the OA3 binaries change — script logic ships through GitHub.
+`Repo` and `Ref` live in `config.json` (on the media, never in git), so a fork points its own
+media at its own repo/branch without touching a line of script. Pin `Ref` to something **you**
+control — `main`, your own `stable`, a version tag. The media only re-flashes when `config.json`,
+the profile, or the OA3 binaries change; script logic ships through GitHub.
 
 ---
 
@@ -32,9 +34,9 @@ You edit + test on `main`; PR `main -> prod` to release. The media only re-flash
 
 ```
 WinPE starts -> Recast initializes network -> profile runs InvokeMainCommand
-  -> (Startup.ps1 or the profile) fetches bootstrap.ps1 from GitHub@<ref>   (baked fallback if offline)
+  -> (Startup.ps1 or the profile) fetches bootstrap.ps1 from <Repo>@<Ref>   (baked fallback if offline)
   -> bootstrap.ps1:
-       reads X:\config.json
+       reads X:\config.json  (Repo, Ref, TenantId, AppId, AuthMode)
        prompts:  Group Tag  [1 = 1:1 Assigned / 2 = Shared / 3 = manual]
        1) 4kAutopilotHashUpload.ps1  -> OA3Tool hash -> Graph import
           (DeviceCode: operator signs in at microsoft.com/devicelogin here)
@@ -95,23 +97,29 @@ Empty result = good. 401/403 = fix permissions first.
 
 ## Part A — repo (one time)
 
-1. Ensure `Initialize-WinPEAP.ps1`, `Invoke-WinPEAPBuild.ps1`, `bootstrap.ps1`,
-   `4kAutopilotHashUpload.ps1`, `Startup.ps1`, `oa3tool.exe`, `oa3.cfg`, `input.xml` are on `main`.
-2. Create branch **`prod`** from `main`.
-3. Verify `https://raw.githubusercontent.com/blawalt/WinPEAP/prod/Initialize-WinPEAP.ps1` loads (not 404).
+1. Fork the repo (or use it directly). Ensure `Initialize-WinPEAP.ps1`, `Invoke-WinPEAPBuild.ps1`,
+   `bootstrap.ps1`, `4kAutopilotHashUpload.ps1`, `Startup.ps1`, `oa3tool.exe`, `oa3.cfg`,
+   `input.xml` are on the branch you'll pin (`main`, or your own `stable` / a tag).
+2. Verify `https://raw.githubusercontent.com/<you>/WinPEAP/<ref>/Initialize-WinPEAP.ps1` loads (not 404).
+
+`config.json` on the media stores `Repo` + `Ref`, so your booted media pulls from **your** fork
+at **your** pinned ref — nothing in the scripts is hardcoded to upstream.
 
 ## Part B — initialize the WinPEAP layer
 
 Run `Invoke-OSDeployHydration` first if you haven't (see Prerequisites). Then:
 
 ```powershell
-iwr https://raw.githubusercontent.com/blawalt/WinPEAP/prod/Initialize-WinPEAP.ps1 -OutFile Initialize-WinPEAP.ps1
+iwr https://raw.githubusercontent.com/blawalt/WinPEAP/main/Initialize-WinPEAP.ps1 -OutFile Initialize-WinPEAP.ps1
 
 # device code (no secret on media) - prompts for Tenant ID + App ID
 .\Initialize-WinPEAP.ps1 -AuthMode DeviceCode -BuildName AP
 
 # or client secret
 .\Initialize-WinPEAP.ps1 -AuthMode ClientSecret -TenantId <guid> -AppId <guid> -AppSecret <value> -BuildName AP
+
+# fork: point the media at your repo + pinned ref
+.\Initialize-WinPEAP.ps1 -Repo <you>/WinPEAP -Ref stable -AuthMode DeviceCode -BuildName AP
 ```
 
 `Initialize-WinPEAP.ps1` options:
@@ -122,7 +130,8 @@ iwr https://raw.githubusercontent.com/blawalt/WinPEAP/prod/Initialize-WinPEAP.ps
 | `-AuthMode` | `DeviceCode` | `DeviceCode` or `ClientSecret` |
 | `-Drivers` | off | also run `Save-WinPECloudDriver` and set `WinPEDriver` (Hydration already pulls the common packs) |
 | `-WinPEDriver` | `Dell,USB` | vendors passed to `Save-WinPECloudDriver` when `-Drivers` is set |
-| `-Ref` | `prod` | branch/tag the media pulls from at runtime |
+| `-Repo` | `blawalt/WinPEAP` | repo the media pulls from at runtime (set to your fork); written to `config.json` |
+| `-Ref` | `main` | branch/tag the media pulls from at runtime; written to `config.json` |
 
 ## Part C — build the media
 
@@ -158,9 +167,15 @@ At the WinPE prompt: `Get-NetAdapter | ? Status -eq 'Up'` and `ipconfig` — con
 
 ## Part E — production
 
-Green run → PR `main → prod`, set `config.json` and `Startup.ps1` `$Ref` to `prod`, rebuild,
-re-flash the techs' sticks **once**. Thereafter: edit `main` → test → PR `main → prod`. No
-re-flash unless media-side files change.
+Pick a release model that suits you:
+
+- **Simple:** pin `-Ref main` and just be careful what you push.
+- **Safer:** keep a long-lived branch (e.g. `stable`) or cut tags; pin `-Ref stable`. Develop on
+  `main`, merge to `stable` only after a green test run so a mid-day push can't reach a tech.
+
+Green run → merge to your pinned ref → re-run `Initialize-WinPEAP.ps1` (writes the new `config.json`
++ profile) → `Invoke-WinPEAPBuild` → re-flash the techs' sticks **once**. Thereafter script logic
+ships through GitHub; re-flash only when `config.json`, the profile, or the OA3 binaries change.
 
 ---
 
