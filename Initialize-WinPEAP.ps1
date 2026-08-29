@@ -128,6 +128,12 @@ try { Fetch 'Invoke-WinPEAPBuild.ps1' (Join-Path $OSDeployRoot 'Invoke-WinPEAPBu
 
 # ---------- 11. summary ----------
 Say "`n=== Done ===" Cyan
+Say "Wrote:" Cyan
+Say "  $filesDir\   (config.json, oa3tool.exe, PCPKsp.dll, oa3.cfg, input.xml, *.ps1)"
+Say "  $profDir\$ProfileName.json"
+Say "  $bpDir\$BuildName.json"
+Say "  $OSDeployRoot\Invoke-WinPEAPBuild.ps1"
+Say ""
 Say "Runtime source pinned to:  $Repo @ $Ref   (change with -Repo / -Ref, then rebuild)" Cyan
 Say ""
 Say "App registration checklist ($AuthMode):" Cyan
@@ -135,9 +141,10 @@ if ($AuthMode -eq 'ClientSecret') {
     Say "  - Graph API permission: DeviceManagementServiceConfig.ReadWrite.All  (Application) + admin consent"
     Say "  - client secret (its value is now in config.json on the media)"
 } else {
-    Say "  - Authentication > Allow public client flows = Yes"
+    Say "  - Authentication > Allow public client flows = Yes  (device code is a public-client flow)"
     Say "  - Graph API permission: DeviceManagementServiceConfig.ReadWrite.All  (Delegated) + admin consent"
-    Say "  - the tech who signs in at microsoft.com/devicelogin needs the Intune Administrator role"
+    Say "  - the tech who signs in needs an Intune RBAC role with the 'Enrollment programs' permission"
+    Say "    (a scoped custom role is fine - not the Intune Administrator directory role)"
 }
 Say "`nNext:" Cyan
 Say "  . $OSDeployRoot\Invoke-WinPEAPBuild.ps1"

@@ -10,7 +10,7 @@ device lands Entra‑joined and Intune‑enrolled with minimal touch.
 
 | You are using… | Guide |
 |---|---|
-| **OSDCloud V2** — the `OSDCloud` module / OSDeployCore, workflow engine, `WinPEStartup` profiles | **[docs/OSDCloud-V2.md](docs/OSDCloud-V2.md)** ← current, a thin Autopilot layer on top of OSDeploy hydration |
+| **OSDCloud V2** — the `OSDCloud` module / OSDeployCore, workflow engine, `WinPEStartup` profiles | **[docs/OSDCloud-V2.md](docs/OSDCloud-V2.md)** ← current, a thin Autopilot layer for OSDCloud V2 |
 | **OSDCloud V1** — the `OSD` module, `Edit-OSDCloudWinPE`, `-StartOSDCloud` / `-ZTI` | [docs/OSDCloud-V1.md](docs/OSDCloud-V1.md) — still supported |
 
 Both use the same `4kAutopilotHashUpload.ps1`.
@@ -18,15 +18,19 @@ Both use the same `4kAutopilotHashUpload.ps1`.
 ## Quick start (V2)
 
 **Prereq:** on the build box, in an **elevated PowerShell 7** session (7.6+ — the OSDeploy V2
-tooling is a `pwsh` workflow), install the modules and run Segura's hydration (installs the ADK,
-imports a Windows OS, pulls WinPE drivers, proves a stock build works):
+tooling is a `pwsh` workflow), install the modules, the ADK, and WinPE drivers:
 
 ```powershell
-Install-Module -Name OSDCloud                    # OSDCloud V2 engine
-Install-Module -Name OSDeploy -AllowPrerelease   # Build-OSDeployBoot / hydration (prerelease only on the gallery)
+Install-Module -Name OSDCloud                     # OSDCloud V2 engine
+Install-Module -Name OSDeploy -AllowPrerelease    # Build-OSDeployBoot etc. (prerelease only on the gallery)
+Install-Module -Name OSD                          # baked into the boot image by Build-OSDeployBoot
 
-Invoke-OSDeployHydration                         # https://www.osdeploy.com/osdeploy-guide/osdeploy-hydration
+Install-OSDeploySoftware -Name 'adk-25h2' -Force  # Windows ADK + WinPE add-on
+Update-OSDeployCoreDrivers                        # WinPE drivers
 ```
+
+(`Invoke-OSDeployHydration` does all this plus a full Windows OS import, but it's interactive —
+see [docs/OSDCloud-V2.md](docs/OSDCloud-V2.md) for why the steps above are enough and stay zero-touch.)
 
 Then add the WinPEAP Autopilot layer and build:
 
@@ -61,7 +65,7 @@ checklist, and the VM → hardware test plan.
 
 | File | Used by | Purpose |
 |---|---|---|
-| `Initialize-WinPEAP.ps1` | V2 | Layers the Autopilot bits (config, profile, startup files, build profile) onto an OSDeployCore box that's already been hydrated |
+| `Initialize-WinPEAP.ps1` | V2 | Layers the Autopilot bits (config, profile, startup files, build profile) onto a prepared OSDeployCore box |
 | `Invoke-WinPEAPBuild.ps1` | V2 | Wrapper: `Build-OSDeployBoot` → stage startup files → package ISO/USB |
 | `bootstrap.ps1` | V2 | Runtime orchestrator: hash upload → OSDCloud workflow → write `SetupComplete` |
 | `Startup.ps1` | V2 | Optional thin WinPE launcher (fetches `bootstrap.ps1`) |
@@ -76,7 +80,7 @@ checklist, and the VM → hardware test plan.
 | Client type | Confidential | Public (Allow public client flows = Yes) |
 | Graph permission | `DeviceManagementServiceConfig.ReadWrite.All` — **Application** | same scope — **Delegated** |
 | Secret on media | Yes | **None** |
-| Who needs rights | The app | The signing‑in tech (Intune Administrator) |
+| Who needs rights | The app | The signing‑in tech — Intune RBAC "Enrollment programs" permission (not Intune Administrator) |
 | Unattended | Yes | No — interactive sign‑in each run |
 
 ## ⚠️ VM testing

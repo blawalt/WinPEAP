@@ -60,22 +60,25 @@ of setup — **before** the Autopilot ESP. Right place for machine prep; not for
 
 Everything here runs on the build box in an **elevated PowerShell 7 session** (`pwsh`, 7.6+ —
 the OSDeploy V2 tooling is a `pwsh` workflow; Windows PowerShell 5.1 is not supported for the
-build side). Install both modules:
+build side).
 
 ```powershell
-Install-Module -Name OSDCloud                    # the OSDCloud V2 deployment engine
-Install-Module -Name OSDeploy -AllowPrerelease   # Build-OSDeployBoot / Invoke-OSDeployHydration (gallery has prerelease only)
+Install-Module -Name OSDCloud                     # OSDCloud V2 deployment engine (baked into the boot image)
+Install-Module -Name OSDeploy -AllowPrerelease    # Build-OSDeployBoot etc. (gallery has prerelease only)
+Install-Module -Name OSD                          # Build-OSDeployBoot bakes this into the boot image
+
+Install-OSDeploySoftware -Name 'adk-25h2' -Force  # Windows ADK + WinPE add-on (adjust the ADK name to taste)
+Update-OSDeployCoreDrivers                        # WinPE network / storage / wifi drivers
 ```
 
-Then prepare the box once with **[`Invoke-OSDeployHydration`](https://www.osdeploy.com/osdeploy-guide/osdeploy-hydration)**
-(Segura's). It installs the ADK + 7-Zip, downloads the current Windows Enterprise ESD, imports
-it as a Windows OS + WinRE source, pulls vendor/Microsoft WinPE drivers, and runs
-`Build-OSDeployBoot` once to prove a stock ISO builds. This repo does **not** re-implement any
-of that — it layers the Autopilot pieces on top using the documented `build-profiles` /
-`winpe-profiles` / `WinPEStartup\Files` customization surface.
+**About `Invoke-OSDeployHydration`:** it does all of the above **plus** downloading a Windows
+Enterprise ESD and importing it as a full Windows OS + WinRE source — but it is *interactive*
+(prompts for selections), which breaks a zero-touch setup. This solution doesn't need the OS
+import (OSDCloud downloads the Windows image at deploy time), so the steps above are enough.
+Run hydration instead only if you specifically want WinRE-based boot media or a guided setup.
 
-Optionally: `Install-Module OSD` as well if you want `Initialize-WinPEAP.ps1 -Drivers` to pull
-extra WinPE drivers (Hydration already covers the common ones).
+This repo does **not** re-implement build-box prep — it layers the Autopilot pieces on top
+using the documented `build-profiles` / `winpe-profiles` / `WinPEStartup\Files` surface.
 
 ### Tenant
 
@@ -89,10 +92,21 @@ extra WinPE drivers (Hydration already covers the common ones).
 | Graph permission | `DeviceManagementServiceConfig.ReadWrite.All` — **Application** | same scope — **Delegated** |
 | Admin consent | Required | Required |
 | Secret on media | Yes (in `config.json`) | **None** — `config.json` holds only Tenant ID + App ID |
-| Who needs rights | The app | The signing-in tech (**Intune Administrator** role) |
+| Who needs rights | The app | The signing-in tech — an **Intune RBAC role with the "Enrollment programs" permission** (a scoped custom role is fine; *not* the Intune Administrator directory role) |
 | Unattended | Yes | No — interactive sign-in each deployment |
 
 One app registration can carry both permission types if you want a single App ID.
+
+**Why "Allow public client flows"?** Azure treats an app registration as a *confidential*
+client by default — it must present a secret or certificate. The device-code grant is a
+*public* client flow (it runs where no secret can be protected), so you have to opt the app
+in. Without it, the token request fails with `AADSTS7000218` ("request body must contain
+client_assertion or client_secret").
+
+**Why not Intune Administrator?** The `importedWindowsAutopilotDeviceIdentities` POST is gated
+by the Intune RBAC **Enrollment programs** permission (Create + Read), not by a directory role.
+A tech who already enrolls devices generally has an equivalent role, or you grant a narrow
+custom Intune role scoped to just that.
 
 Test the app registration from your desk before building:
 
@@ -119,7 +133,7 @@ at **your** pinned ref — nothing in the scripts is hardcoded to upstream.
 
 ## Part B — initialize the WinPEAP layer
 
-Run `Invoke-OSDeployHydration` first if you haven't (see Prerequisites). Then:
+Do the build-box prep first if you haven't (see Prerequisites — modules, ADK, drivers). Then:
 
 ```powershell
 iwr https://raw.githubusercontent.com/blawalt/WinPEAP/main/Initialize-WinPEAP.ps1 -OutFile Initialize-WinPEAP.ps1
@@ -205,7 +219,7 @@ ships through GitHub; re-flash only when `config.json`, the profile, or the OA3 
 
 | File | Where it runs | Notes |
 |---|---|---|
-| `Initialize-WinPEAP.ps1` | build box — **elevated pwsh 7** | layers config/profile/startup-files onto a hydrated OSDeployCore box |
+| `Initialize-WinPEAP.ps1` | build box — **elevated pwsh 7** | layers config/profile/startup-files onto a prepared OSDeployCore box |
 | `Invoke-WinPEAPBuild.ps1` | build box — **elevated pwsh 7** | build + stage + package wrapper |
 | `config.json` | media → `X:\` | Repo/Ref/tenant/auth; from `config.sample.json`; **git-ignored** |
 | `Startup.ps1` | WinPE — **Windows PowerShell 5.1** | thin loader (only used with `-ProfileStyle Loader`) |
