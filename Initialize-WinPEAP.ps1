@@ -40,6 +40,7 @@ param(
     [string] $SeedProfile,                        # build profile to seed AP.json from (default: OSDeploy.json)
     [string] $TimeZone,                           # override SetTimeZone in the build profile (else inherit the seed's)
     [switch] $NoWallpaper,                        # clear WinPECustomWallpaper in the build profile
+    [string[]] $GroupTagMenu,                     # e.g. '1:1 Assigned=', 'Shared=Shared' - omit for a plain prompt
     [string] $TenantId,
     [string] $AppId,
     [string] $AppSecret
@@ -90,6 +91,12 @@ $profDir,$filesDir,$bpDir | ForEach-Object { New-Item $_ -ItemType Directory -Fo
 # ---------- 4. config.json ----------
 $cfg = [ordered]@{ Repo = $Repo; Ref = $Ref; TenantId = $TenantId; AppId = $AppId; AuthMode = $AuthMode }
 if ($AuthMode -eq 'ClientSecret') { $cfg.AppSecret = $AppSecret }
+if ($GroupTagMenu) {
+    $cfg.GroupTagMenu = @($GroupTagMenu | ForEach-Object {
+        $p = $_ -split '=', 2
+        [ordered]@{ label = $p[0].Trim(); tag = (@($p)[1] ?? '').Trim() }
+    })
+}
 $cfg | ConvertTo-Json | Set-Content (Join-Path $filesDir 'config.json') -Encoding UTF8
 Say "config.json written ($AuthMode$(if($AuthMode -eq 'DeviceCode'){' - no secret on media'}))" Green
 

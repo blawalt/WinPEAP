@@ -37,7 +37,7 @@ WinPE starts -> Recast initializes network -> profile runs InvokeMainCommand
   -> (Startup.ps1 or the profile) fetches bootstrap.ps1 from <Repo>@<Ref>   (baked fallback if offline)
   -> bootstrap.ps1:
        reads X:\config.json  (Repo, Ref, TenantId, AppId, AuthMode)
-       prompts:  Group Tag  [1 = 1:1 Assigned / 2 = Shared / 3 = manual]
+       prompts:  Group Tag  (plain prompt, or a numbered menu if config.json has GroupTagMenu)
        1) 4kAutopilotHashUpload.ps1  -> OA3Tool hash -> Graph import
           (DeviceCode: operator signs in at microsoft.com/devicelogin here)
        2) OSDCloud V2 workflow       -> download + apply Windows image
@@ -167,6 +167,7 @@ iwr https://raw.githubusercontent.com/blawalt/WinPEAP/main/Initialize-WinPEAP.ps
 | `-SeedProfile` | `OSDeploy.json` | build profile to copy as the base for `AP.json` (name in `build-profiles\amd64\` or a full path) |
 | `-TimeZone` | *(inherit seed's)* | override `SetTimeZone`, e.g. `'Eastern Standard Time'` |
 | `-NoWallpaper` | off | clear `WinPECustomWallpaper` (drop the Recast branding) |
+| `-GroupTagMenu` | *(none — plain prompt)* | `'Label=tag'` pairs for a numbered Group Tag menu, e.g. `'1:1 Assigned=', 'Shared=Shared'`; a "Manual entry" option is always appended |
 
 Drivers are **not** an option here — `Update-OSDeployCoreDrivers` (a prereq) populates them and
 the stock profile references them; `Initialize-WinPEAP.ps1` inherits that.

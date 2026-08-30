@@ -59,23 +59,34 @@ function Get-RepoScript {
 }
 
 function Get-GroupTag {
-    param([string]$Default = '')
+    param($Menu)   # array of {label, tag} from config.json, or $null for a plain prompt
+
+    if (-not $Menu) {
+        $m = Read-Host '  Autopilot Group Tag (blank = none)'
+        return $m.Trim()
+    }
+
+    $opts = @($Menu) + ([pscustomobject]@{ label = 'Manual entry'; tag = $null; manual = $true })
     while ($true) {
         Write-Host ''
         Write-Host '  Autopilot Group Tag:' -ForegroundColor Cyan
-        Write-Host '    1) 1:1 Assigned   (no group tag)'
-        Write-Host '    2) Shared         (group tag: Shared)'
-        Write-Host '    3) Manual entry'
-        switch (Read-Host '  Choice [1-3]') {
-            '1' { return '' }
-            '2' { return 'Shared' }
-            '3' {
+        for ($i = 0; $i -lt $opts.Count; $i++) {
+            $hint = if ($opts[$i].manual) { '' }
+                    elseif ([string]::IsNullOrEmpty($opts[$i].tag)) { '(no group tag)' }
+                    else { "(group tag: $($opts[$i].tag))" }
+            Write-Host ('    {0}) {1,-16} {2}' -f ($i + 1), $opts[$i].label, $hint)
+        }
+        $sel = Read-Host "  Choice [1-$($opts.Count)]"
+        if ($sel -match '^\d+$' -and [int]$sel -ge 1 -and [int]$sel -le $opts.Count) {
+            $pick = $opts[[int]$sel - 1]
+            if ($pick.manual) {
                 $m = Read-Host '  Enter group tag'
                 if (-not [string]::IsNullOrWhiteSpace($m)) { return $m.Trim() }
                 Write-Host '  Group tag cannot be blank for manual entry.' -ForegroundColor Yellow
             }
-            default { Write-Host '  Enter 1, 2, or 3.' -ForegroundColor Yellow }
+            else { return [string]$pick.tag }
         }
+        else { Write-Host "  Enter 1-$($opts.Count)." -ForegroundColor Yellow }
     }
 }
 
@@ -93,8 +104,8 @@ try {
     Write-Host "  Source: $repo @ $ref" -ForegroundColor DarkGray
 
     # ---- group tag ----
-    try   { $groupTag = Get-GroupTag }
-    catch { $groupTag = ''; Write-Warning 'No console for prompt - defaulting to 1:1 Assigned (no group tag).' }
+    try   { $groupTag = Get-GroupTag -Menu $cfg.GroupTagMenu }
+    catch { $groupTag = ''; Write-Warning 'No console for prompt - defaulting to no group tag.' }
     Write-Host "  Using group tag: '$groupTag'" -ForegroundColor Green
 
     # ---- 1) Autopilot 4k hash upload ----
@@ -111,7 +122,7 @@ try {
     & $up @apParams
 
     # ---- 2) OSDCloud V2 workflow ----
-    & (Import-Module OSDCloud -PassThru -Force) {
+    & (Import-Module OSDCloud -PassThru -Force -DisableNameChecking) {
         Initialize-OSDCloudDeploy -WorkflowName 'default'
         $global:OSDCloudDeploy.Force     = $true
         $global:OSDCloudDeploy.TimeStart = Get-Date
