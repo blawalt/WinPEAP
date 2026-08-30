@@ -178,19 +178,20 @@ the stock profile references them; `Initialize-WinPEAP.ps1` inherits that.
 Invoke-WinPEAPBuild -BuildName AP -Media ISO      # ISO | USB | Both
 ```
 
-The wrapper does three things, and **two of them show a GUI picker** (the OSDeploy cmdlets take
-no path/name parameter):
+`Initialize-WinPEAP.ps1` set the build profile's `WinPEMediaScript` to `winpeap-media.ps1`,
+which runs the stock EN-US language filter **and** copies `winpe-startup-files\` into
+`WinPEStartup\Files\` *during* the build — so `Build-OSDeployBoot` produces a correct ISO in
+one pass. The wrapper just:
 
-1. `Build-OSDeployBoot` — **select `AP`** at the profile picker (or pass a non-interactive flag
-   via `-BuildArgs @{ Auto = $true }` if `Get-Help Build-OSDeployBoot -Full` shows one)
-2. robocopy `winpe-startup-files\` → the fresh build's `bootmedia\WinPEStartup\Files\`
-   (Build makes the ISO *before* this, so the media must be re-packed)
-3. `Update-OSDeployBootISO` / `Update-OSDeployBootUSB` — **select the build folder**
-   (e.g. `26100.1-amd64-AP`) at the folder picker
+1. `Build-OSDeployBoot` — **select `AP`** at the profile picker (or `-BuildArgs @{ Auto = $true }`
+   if `Get-Help Build-OSDeployBoot -Full` shows a non-interactive flag)
+2. verifies `bootmedia\WinPEStartup\Files\config.json` landed
+3. `-Media USB` / `Both` → `Update-OSDeployBootUSB` (folder picker — **select the build folder**,
+   e.g. `26100.1-amd64-AP`; this cmdlet has no path parameter)
 
-Building media is a rare admin task, so two folder-picks are acceptable; the per-device tech
-flow (boot → deploy) stays fully hands-off. **Always build through this wrapper** — a plain
-`Build-OSDeployBoot` leaves the startup files out of the media.
+For `-Media ISO` there's just the one profile-pick; `bootmedia.iso` already has everything.
+**Always build through the wrapper** — a plain `Build-OSDeployBoot` from a profile without the
+`winpeap-media.ps1` hook leaves the startup files out.
 
 ## Part D — test
 
@@ -241,8 +242,9 @@ ships through GitHub; re-flash only when `config.json`, the profile, or the OA3 
 
 | File | Where it runs | Notes |
 |---|---|---|
-| `Initialize-WinPEAP.ps1` | build box — **elevated pwsh 7** | layers config/profile/startup-files onto a prepared OSDeployCore box |
-| `Invoke-WinPEAPBuild.ps1` | build box — **elevated pwsh 7** | build + stage + package wrapper |
+| `Initialize-WinPEAP.ps1` | build box — **elevated pwsh 7** | writes config, profile, `winpeap-media.ps1`, and the seeded build profile |
+| `Invoke-WinPEAPBuild.ps1` | build box — **elevated pwsh 7** | runs `Build-OSDeployBoot`, verifies staging, optional USB |
+| `winpeap-media.ps1` | build box (during build) | generated; EN-US filter + stages `winpe-startup-files\` into the media |
 | `config.json` | media → `X:\` | Repo/Ref/tenant/auth; from `config.sample.json`; **git-ignored** |
 | `Startup.ps1` | WinPE — **Windows PowerShell 5.1** | thin loader (only used with `-ProfileStyle Loader`) |
 | `bootstrap.ps1` | WinPE — **Windows PowerShell 5.1** | orchestrator — the file you iterate on |
