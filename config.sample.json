@@ -13,10 +13,15 @@
     { "label": "Shared",       "tag": "Shared" }
   ],
 
+  "OemActivation": true,
+  "FixPSReadLine": true,
+
   "_notes": {
     "Repo": "owner/name of the repo (or your fork) the media pulls scripts from at runtime",
     "Ref":  "branch or tag you pin to - 'main', your own 'stable', a version tag",
     "AuthMode": "DeviceCode (no secret) or ClientSecret (add \"AppSecret\": \"...\")",
-    "GroupTagMenu": "OPTIONAL. Omit for a plain 'Group Tag (blank = none)' prompt. Include an array of {label, tag} for a numbered menu; a 'Manual entry' option is always appended."
+    "GroupTagMenu": "OPTIONAL. Omit for a plain 'Group Tag (blank = none)' prompt. Include an array of {label, tag} for a numbered menu; a 'Manual entry' option is always appended.",
+    "OemActivation": "OPTIONAL, default true. false = don't write the InstallProductKey step into SetupComplete (set false if you deploy Enterprise / use KMS or subscription activation).",
+    "FixPSReadLine": "OPTIONAL, default true. false = leave the workflow's duplicate PSReadLine module in place."
   }
 }

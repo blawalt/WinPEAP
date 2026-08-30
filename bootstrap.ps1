@@ -5,8 +5,10 @@
     for tenant / app / auth settings, prompts the operator for a Group Tag, then:
       1. runs the Autopilot 4k hash upload
       2. runs the OSDCloud V2 workflow (image download + apply)
-      3. writes SetupComplete on the applied OS (OEM firmware-key activation + unattend cleanup)
-      4. cleans up the workflow's duplicate PSReadLine
+      3. removes the workflow's duplicate PSReadLine    (config.json  "FixPSReadLine": false  to skip)
+      4. writes SetupComplete on the applied OS:
+           - OEM firmware-key activation             (config.json  "OemActivation": false  to skip)
+           - removes the staged unattend.xml          (always)
       5. copies logs to any media with an \OSDCloudLogs folder
 
     Fetched from GitHub at runtime by the profile; a baked copy on X:\ is the offline fallback.
@@ -30,7 +32,16 @@ $SetupCompletePs1 = @'
 $ErrorActionPreference = 'SilentlyContinue'
 "[$(Get-Date -Format o)] SetupComplete start"
 
-# OEM firmware-key activation (works when the deployed edition matches the firmware key, e.g. Pro)
+#__OEM__
+
+# Remove the staged unattend
+$panther = Join-Path $env:WINDIR 'Panther'
+Remove-Item (Join-Path $panther 'unattend.xml'), (Join-Path $panther 'unattend\unattend.xml') -Force -ErrorAction SilentlyContinue
+"[$(Get-Date -Format o)] SetupComplete done"
+'@
+
+$SetupCompleteOem = @'
+# OEM firmware-key activation (only helps when the deployed edition matches the firmware key, e.g. Pro)
 $key = (Get-CimInstance -ClassName SoftwareLicensingService).OA3xOriginalProductKey
 if ($key) {
     $sls = Get-CimInstance -ClassName SoftwareLicensingService
@@ -39,11 +50,6 @@ if ($key) {
     Invoke-CimMethod -InputObject $sls -MethodName RefreshLicenseStatus | Out-Null
     "OA3 firmware key installed"
 }
-
-# Remove the staged unattend
-$panther = Join-Path $env:WINDIR 'Panther'
-Remove-Item (Join-Path $panther 'unattend.xml'), (Join-Path $panther 'unattend\unattend.xml') -Force -ErrorAction SilentlyContinue
-"[$(Get-Date -Format o)] SetupComplete done"
 '@
 
 function Get-RepoScript {
@@ -103,6 +109,10 @@ try {
     $base = "https://raw.githubusercontent.com/$repo/$ref"
     Write-Host "  Source: $repo @ $ref" -ForegroundColor DarkGray
 
+    # post-deploy toggles (default on; set false in config.json to skip)
+    $doOemActivation = if ($null -ne $cfg.OemActivation) { [bool]$cfg.OemActivation } else { $true }
+    $doFixPSReadLine = if ($null -ne $cfg.FixPSReadLine) { [bool]$cfg.FixPSReadLine } else { $true }
+
     # ---- group tag ----
     try   { $groupTag = Get-GroupTag -Menu $cfg.GroupTagMenu }
     catch { $groupTag = ''; Write-Warning 'No console for prompt - defaulting to no group tag.' }
@@ -137,15 +147,20 @@ try {
     Write-Host "Applied OS drive: $t"
 
     # ---- 4) undo the workflow's PSReadLine side-by-side install ----
-    $psrl = "$t\Program Files\WindowsPowerShell\Modules\PSReadLine"
-    Get-ChildItem $psrl -Directory -ErrorAction SilentlyContinue |
-        Where-Object Name -ne '2.0.0' | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    if ($doFixPSReadLine) {
+        $psrl = "$t\Program Files\WindowsPowerShell\Modules\PSReadLine"
+        Get-ChildItem $psrl -Directory -ErrorAction SilentlyContinue |
+            Where-Object Name -ne '2.0.0' | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "PSReadLine: kept inbox 2.0.0, removed any workflow-added copies"
+    }
 
     # ---- 5) write SetupComplete ----
     $s = "$t\Windows\Setup\Scripts"
     New-Item $s -ItemType Directory -Force | Out-Null
+    $oemText = if ($doOemActivation) { $SetupCompleteOem } else { '# OEM activation skipped (config.json OemActivation:false)' }
     Set-Content "$s\SetupComplete.cmd" -Value $SetupCompleteCmd -Encoding Ascii -Force
-    Set-Content "$s\SetupComplete.ps1" -Value $SetupCompletePs1 -Encoding UTF8 -Force
+    Set-Content "$s\SetupComplete.ps1" -Value ($SetupCompletePs1.Replace('#__OEM__', $oemText)) -Encoding UTF8 -Force
+    Write-Host "SetupComplete written (OEM activation: $doOemActivation)"
 }
 finally {
     Stop-Transcript | Out-Null

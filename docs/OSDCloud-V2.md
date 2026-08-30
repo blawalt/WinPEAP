@@ -27,7 +27,8 @@ BUILD BOX  (elevated PowerShell 7)
   Invoke-WinPEAPBuild  ->  Build-OSDeployBoot  ->  bootmedia.iso  (files already inside)
 
 BOOT MEDIA  (a small number of technicians hold it)
-  X:\config.json          Repo / Ref / TenantId / AppId / AuthMode [/ AppSecret] [/ GroupTagMenu]
+  X:\config.json          Repo / Ref / TenantId / AppId / AuthMode [/ AppSecret]
+                          [/ GroupTagMenu / OemActivation / FixPSReadLine]
   X:\oa3tool.exe, PCPKsp.dll, oa3.cfg, input.xml   OA3Tool 4k-hash deps  (must be on the media)
   X:\bootstrap.ps1, 4kAutopilotHashUpload.ps1, Startup.ps1   offline fallback copies
 
@@ -56,8 +57,8 @@ WinPE boots -> network comes up -> the WinPEStartup profile runs its one line
        1) 4kAutopilotHashUpload.ps1:  register PCPKsp.dll -> OA3Tool -> 4k hash -> Graph import
           (DeviceCode: the operator signs in at microsoft.com/devicelogin here)
        2) OSDCloud V2 workflow:  download + apply the Windows image
-       3) writes C:\Windows\Setup\Scripts\SetupComplete.{cmd,ps1}
-       4) removes the workflow's duplicate PSReadLine (keeps inbox 2.0.0)
+       3) removes the workflow's duplicate PSReadLine  (keeps inbox 2.0.0; see below)
+       4) writes C:\Windows\Setup\Scripts\SetupComplete.{cmd,ps1}
        5) copies X:\Windows\Temp\*.log to any media \OSDCloudLogs folder
   -> reboot
 Windows setup -> specialize -> SetupComplete.cmd runs (OEM activation, unattend cleanup) -> OOBE / Autopilot
@@ -66,6 +67,20 @@ Windows setup -> specialize -> SetupComplete.cmd runs (OEM activation, unattend 
 `SetupComplete.cmd` is native Windows — if the file exists it runs once, as SYSTEM, at the end
 of setup, **before** the Autopilot ESP. It's the right place for machine prep (OEM key, cleanup);
 app installs stay Intune's job.
+
+### What bootstrap.ps1 changes on the applied OS
+
+Beyond running the OSDCloud workflow, `bootstrap.ps1` makes three edits to the deployed image.
+Two are toggleable in `config.json` (both default **on**):
+
+| Action | Why | Turn off with |
+|---|---|---|
+| **Remove the duplicate PSReadLine module** | OSDeploy's `default` workflow runs a *"Update PowerShell Modules -Offline"* task that `Save-Module`s a newer PSReadLine **beside** the inbox `2.0.0` — the newer one fails to load under Windows PowerShell 5.1 (*"Cannot load PSReadline module"*). `bootstrap.ps1` deletes any PSReadLine folder that isn't `2.0.0`. | `"FixPSReadLine": false` |
+| **OEM firmware-key activation** (via `SetupComplete.ps1`) | V1 did this; V2 has no equivalent step. Installs `OA3xOriginalProductKey` with `InstallProductKey` + `RefreshLicenseStatus`. **Only helps when the deployed edition matches the firmware key** (typically Pro). Skip it if you deploy Enterprise, or use KMS / Entra subscription activation. | `"OemActivation": false` |
+| **Delete the staged `C:\Windows\Panther\unattend*.xml`** | The workflow stages an unattend that's already been consumed by specialize; leaving it around can confuse later tooling. | *(always — not toggleable)* |
+
+`SetupComplete.log` (`C:\Windows\Temp\`) records what ran — you'll see `OA3 firmware key installed`
+only when activation is on **and** a firmware key was present.
 
 ---
 
@@ -201,6 +216,12 @@ The one most people want is the Group Tag menu:
 Omit it entirely for a plain `Group Tag (blank = none)` prompt (the default). A "Manual entry"
 option is always appended.
 
+Other optional keys — both default **on**, set to `false` to opt out (see
+[What bootstrap.ps1 changes on the applied OS](#what-bootstrapps1-changes-on-the-applied-os)):
+
+- `"OemActivation": false` — skip the OEM firmware-key step (deploying Enterprise / using KMS or subscription activation)
+- `"FixPSReadLine": false` — leave the workflow's duplicate PSReadLine module in place
+
 ### 4. Build
 
 ```powershell
@@ -287,7 +308,7 @@ Same, plus:
 | GUI pickers during the build | `Build-OSDeployBoot` (select `AP`) and `Update-OSDeployBootUSB` (select the build folder) have no path parameter. `-Media ISO` needs only the one profile-pick. |
 | `Import status: unknown. Waiting…` then `Import completed successfully!` | Normal — the import queues before it flips to complete. |
 | Profile fails to load: *"Invalid array passed in, ',' expected"* | Inline PowerShell with escaped quotes / a URL broke the profile-JSON parser. Use `-ProfileStyle Loader` (all logic moves to `Startup.ps1`). |
-| PSReadLine loads twice / *"Cannot load PSReadline module"* | The `default` workflow's *"Update PowerShell Modules -Offline"* task drops a newer PSReadLine beside inbox 2.0.0. `bootstrap.ps1` step 4 deletes the extra. |
+| PSReadLine loads twice / *"Cannot load PSReadline module"* | The `default` workflow's *"Update PowerShell Modules -Offline"* task drops a newer PSReadLine beside inbox 2.0.0. `bootstrap.ps1` deletes the extra by default (`"FixPSReadLine": false` to opt out). |
 | Start Menu / console says *"Windows PowerShell 5.1"* | Microsoft cosmetic rename in recent 24H2/25H2 LCUs. Not OSDCloud. |
 | `Add-WindowsCapability` RSAT → `0x800f0950` on non-domain devices | Managed device with no policy allowing FoD from Windows Update. Intune Settings Catalog: *"Specify settings for optional component installation and component repair"* → Enabled + "Download… directly from Windows Update instead of WSUS". |
 
@@ -300,7 +321,7 @@ Same, plus:
 | `Initialize-WinPEAP.ps1` | build box — **elevated pwsh 7** | writes `config.json`, the profile, `winpeap-media.ps1`, the seeded build profile |
 | `Invoke-WinPEAPBuild.ps1` | build box — **elevated pwsh 7** | runs `Build-OSDeployBoot`, verifies staging, optional USB |
 | `winpeap-media.ps1` | build box, during the build | generated; EN-US language filter + stages `winpe-startup-files\` into the media |
-| `config.json` | media → `X:\` | Repo / Ref / tenant / auth / GroupTagMenu; from `config.sample.json`; **git-ignored** |
+| `config.json` | media → `X:\` | Repo / Ref / tenant / auth / GroupTagMenu / OemActivation / FixPSReadLine; from `config.sample.json`; **git-ignored** |
 | `Startup.ps1` | WinPE — **Windows PowerShell 5.1** | thin loader; only used with `-ProfileStyle Loader` |
 | `bootstrap.ps1` | WinPE — **Windows PowerShell 5.1** | orchestrator — the file you iterate on |
 | `4kAutopilotHashUpload.ps1` | WinPE — **Windows PowerShell 5.1** | reusable hash + Graph upload (V1 + V2); `-AuthMode ClientSecret\|DeviceCode` |
