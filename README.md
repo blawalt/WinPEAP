@@ -21,17 +21,19 @@ Both use the same `4kAutopilotHashUpload.ps1`.
 tooling is a `pwsh` workflow), install the modules, the ADK, and WinPE drivers:
 
 ```powershell
-Install-Module -Name OSDCloud                     # OSDCloud V2 engine
-Install-Module -Name OSDeploy -AllowPrerelease    # Build-OSDeployBoot etc. (prerelease only on the gallery)
-Install-Module -Name OSD                          # baked into the boot image by Build-OSDeployBoot
+Install-Module OSDCloud, OSD -Force -Scope AllUsers
+Install-Module OSDeploy -AllowPrerelease -Force -Scope AllUsers    # prerelease-only; time-limited, re-run before each build
 
-Install-OSDeploySoftware -Name 'adk-25h2' -Force  # Windows ADK + WinPE add-on
+winget install --id Microsoft.WindowsADK --exact --accept-source-agreements --accept-package-agreements
+winget install --id Microsoft.ADKPEAddon --exact --accept-source-agreements --accept-package-agreements
+
 Update-OSDeployCoreDrivers                        # WinPE drivers
 Build-OSDeployBoot                                # run once, Cancel the picker to seed the stock build profile
 ```
 
-(`Invoke-OSDeployHydration` does all this plus a full Windows OS import, but it's interactive —
-see [docs/OSDCloud-V2.md](docs/OSDCloud-V2.md) for why the steps above are enough and stay zero-touch.)
+(Don't use `Install-OSDeploySoftware -Name 'adk-25h2'` — in the current preview it wrongly
+blocks the ADK inside a VM on a spurious Hyper-V dependency. `Invoke-OSDeployHydration` does all
+this plus a Windows OS import, but is interactive — see [docs/OSDCloud-V2.md](docs/OSDCloud-V2.md).)
 
 Then add the WinPEAP Autopilot layer and build:
 

@@ -63,16 +63,27 @@ the OSDeploy V2 tooling is a `pwsh` workflow; Windows PowerShell 5.1 is not supp
 build side).
 
 ```powershell
-Install-Module -Name OSDCloud                     # OSDCloud V2 deployment engine (baked into the boot image)
-Install-Module -Name OSDeploy -AllowPrerelease    # Build-OSDeployBoot etc. (gallery has prerelease only)
-Install-Module -Name OSD                          # Build-OSDeployBoot bakes this into the boot image
+# modules (OSDeploy is prerelease-only; the other two have stable releases)
+Install-Module OSDCloud, OSD -Force -Scope AllUsers
+Install-Module OSDeploy -AllowPrerelease -Force -Scope AllUsers
 
-Install-OSDeploySoftware -Name 'adk-25h2' -Force  # Windows ADK + WinPE add-on (adjust the ADK name to taste)
+# Windows ADK + WinPE add-on  (install directly - see note below)
+winget install --id Microsoft.WindowsADK --exact --accept-source-agreements --accept-package-agreements
+winget install --id Microsoft.ADKPEAddon --exact --accept-source-agreements --accept-package-agreements
+
 Update-OSDeployCoreDrivers                        # WinPE network / storage / wifi drivers -> winpe-drivers\amd64\*
 
 Build-OSDeployBoot                                # run once, press Cancel at the profile picker to seed
                                                   # build-profiles\amd64\OSDeploy.json (the stock profile)
 ```
+
+> **Why not `Install-OSDeploySoftware -Name 'adk-25h2'`?** In the current preview it declares a
+> Hyper-V-feature prerequisite for the ADK; on a VM `Test-IsVM` makes it mark the ADK
+> `NotSupported` and skip it. The ADK doesn't actually need the Hyper-V feature —
+> `Build-OSDeployBoot` auto-detects any installed ADK — so install it directly.
+>
+> **The OSDeploy preview module is time-limited** (it warns on load, e.g. *"expires 2026-08-31"*).
+> Run `Update-Module OSDeploy -AllowPrerelease -Force` before each build session.
 
 `Initialize-WinPEAP.ps1` **seeds its build profile (`AP.json`) from that stock `OSDeploy.json`**
 and only overrides `WinPEStartupProfile` — so `Languages`, `SetTimeZone`, `WinPEMediaScript`,
