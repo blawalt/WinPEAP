@@ -1,54 +1,169 @@
+<#
+    bootstrap.ps1 - WinPEAP runtime orchestrator (OSDCloud V2).
+
+    Called by the WinPEStartup profile (directly, or via Startup.ps1). Reads X:\config.json
+    for tenant / app / auth settings, prompts the operator for a Group Tag, then:
+      1. runs the Autopilot 4k hash upload
+      2. runs the OSDCloud V2 workflow (image download + apply)
+      3. removes the workflow's duplicate PSReadLine    (config.json  "FixPSReadLine": false  to skip)
+      4. writes SetupComplete on the applied OS:
+           - OEM firmware-key activation             (config.json  "OemActivation": false  to skip)
+           - removes the staged unattend.xml          (always)
+      5. copies logs to any media with an \OSDCloudLogs folder
+
+    Fetched from GitHub at runtime by the profile; a baked copy on X:\ is the offline fallback.
+#>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$TenantId,
-    [Parameter(Mandatory)][string]$AppId,
-    [Parameter(Mandatory)][string]$AppSecret,
-    [Parameter(Mandatory)][string]$GroupTag,
-    [string]$Ref = 'prod'
+    [string] $Ref   # optional override; normally comes from X:\config.json
 )
-$ErrorActionPreference = 'Stop'
-Start-Transcript "X:\Windows\Temp\bootstrap.log" -Append -Force | Out-Null
-$base = "https://raw.githubusercontent.com/blawalt/WinPEAP/$Ref"
-try {
-    # 1) Autopilot 4k hash upload
-    $up = "$env:TEMP\4kAutopilotHashUpload.ps1"
-    Invoke-WebRequest -UseBasicParsing "$base/4kAutopilotHashUpload.ps1" -OutFile $up
-    & $up -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret -GroupTag $GroupTag
 
-    # 2) OSDCloud V2 workflow
-    & (Import-Module OSDCloud -PassThru -Force) {
+$ErrorActionPreference = 'Stop'
+$logDir = 'X:\Windows\Temp'
+Start-Transcript (Join-Path $logDir 'bootstrap.log') -Append -Force | Out-Null
+
+$SetupCompleteCmd = @'
+@echo off
+PowerShell -NoProfile -ExecutionPolicy Bypass -File "%~dp0SetupComplete.ps1" >> "%WINDIR%\Temp\SetupComplete.log" 2>&1
+exit /b 0
+'@
+
+$SetupCompletePs1 = @'
+$ErrorActionPreference = 'SilentlyContinue'
+"[$(Get-Date -Format o)] SetupComplete start"
+
+#__OEM__
+
+# Remove the staged unattend
+$panther = Join-Path $env:WINDIR 'Panther'
+Remove-Item (Join-Path $panther 'unattend.xml'), (Join-Path $panther 'unattend\unattend.xml') -Force -ErrorAction SilentlyContinue
+"[$(Get-Date -Format o)] SetupComplete done"
+'@
+
+$SetupCompleteOem = @'
+# OEM firmware-key activation (only helps when the deployed edition matches the firmware key, e.g. Pro)
+$key = (Get-CimInstance -ClassName SoftwareLicensingService).OA3xOriginalProductKey
+if ($key) {
+    $sls = Get-CimInstance -ClassName SoftwareLicensingService
+    Invoke-CimMethod -InputObject $sls -MethodName InstallProductKey  -Arguments @{ProductKey = $key} | Out-Null
+    Start-Sleep 5
+    Invoke-CimMethod -InputObject $sls -MethodName RefreshLicenseStatus | Out-Null
+    "OA3 firmware key installed"
+}
+'@
+
+function Get-RepoScript {
+    param([string]$Name)
+    $dest = Join-Path $env:TEMP $Name
+    for ($i = 1; $i -le 5; $i++) {
+        try { Invoke-WebRequest -UseBasicParsing "$base/$Name" -OutFile $dest; return $dest }
+        catch { Write-Warning "fetch $Name attempt $i failed: $_"; Start-Sleep 10 }
+    }
+    $baked = Join-Path 'X:\' $Name
+    if (Test-Path $baked) { Write-Warning "GitHub unreachable - using baked X:\$Name"; return $baked }
+    throw "Cannot obtain $Name from GitHub ($script:base) or X:\"
+}
+
+function Get-GroupTag {
+    param($Menu)   # array of {label, tag} from config.json, or $null for a plain prompt
+
+    if (-not $Menu) {
+        $m = Read-Host '  Autopilot Group Tag (blank = none)'
+        return $m.Trim()
+    }
+
+    $opts = @($Menu) + ([pscustomobject]@{ label = 'Manual entry'; tag = $null; manual = $true })
+    while ($true) {
+        Write-Host ''
+        Write-Host '  Autopilot Group Tag:' -ForegroundColor Cyan
+        for ($i = 0; $i -lt $opts.Count; $i++) {
+            $hint = if ($opts[$i].manual) { '' }
+                    elseif ([string]::IsNullOrEmpty($opts[$i].tag)) { '(no group tag)' }
+                    else { "(group tag: $($opts[$i].tag))" }
+            Write-Host ('    {0}) {1,-16} {2}' -f ($i + 1), $opts[$i].label, $hint)
+        }
+        $sel = Read-Host "  Choice [1-$($opts.Count)]"
+        if ($sel -match '^\d+$' -and [int]$sel -ge 1 -and [int]$sel -le $opts.Count) {
+            $pick = $opts[[int]$sel - 1]
+            if ($pick.manual) {
+                $m = Read-Host '  Enter group tag'
+                if (-not [string]::IsNullOrWhiteSpace($m)) { return $m.Trim() }
+                Write-Host '  Group tag cannot be blank for manual entry.' -ForegroundColor Yellow
+            }
+            else { return [string]$pick.tag }
+        }
+        else { Write-Host "  Enter 1-$($opts.Count)." -ForegroundColor Yellow }
+    }
+}
+
+try {
+    [Net.ServicePointManager]::SecurityProtocol = 'Tls12'
+
+    # ---- config ----
+    if (-not (Test-Path 'X:\config.json')) { throw 'X:\config.json is missing from the boot media.' }
+    $cfg = Get-Content 'X:\config.json' -Raw | ConvertFrom-Json
+    $authMode = if ($cfg.AuthMode) { $cfg.AuthMode } else { 'ClientSecret' }
+
+    $repo = if ($cfg.Repo) { $cfg.Repo } else { 'blawalt/WinPEAP' }
+    $ref  = if ($Ref)      { $Ref }      elseif ($cfg.Ref) { $cfg.Ref } else { 'main' }
+    $base = "https://raw.githubusercontent.com/$repo/$ref"
+    Write-Host "  Source: $repo @ $ref" -ForegroundColor DarkGray
+
+    # post-deploy toggles (default on; set false in config.json to skip)
+    $doOemActivation = if ($null -ne $cfg.OemActivation) { [bool]$cfg.OemActivation } else { $true }
+    $doFixPSReadLine = if ($null -ne $cfg.FixPSReadLine) { [bool]$cfg.FixPSReadLine } else { $true }
+
+    # ---- group tag ----
+    try   { $groupTag = Get-GroupTag -Menu $cfg.GroupTagMenu }
+    catch { $groupTag = ''; Write-Warning 'No console for prompt - defaulting to no group tag.' }
+    Write-Host "  Using group tag: '$groupTag'" -ForegroundColor Green
+
+    # ---- 1) Autopilot 4k hash upload ----
+    $up = Get-RepoScript '4kAutopilotHashUpload.ps1'
+    $apParams = @{
+        TenantId          = $cfg.TenantId
+        AppId             = $cfg.AppId
+        AuthMode          = $authMode
+        UploadToAutopilot = $true
+        ToolRoot          = 'X:\'
+    }
+    if ($cfg.AppSecret) { $apParams.AppSecret = $cfg.AppSecret }
+    if ($groupTag)      { $apParams.GroupTag  = $groupTag }
+    & $up @apParams
+
+    # ---- 2) OSDCloud V2 workflow ----
+    & (Import-Module OSDCloud -PassThru -Force -DisableNameChecking) {
         Initialize-OSDCloudDeploy -WorkflowName 'default'
         $global:OSDCloudDeploy.Force     = $true
         $global:OSDCloudDeploy.TimeStart = Get-Date
         Invoke-OSDCloudWorkflowTask
     }
 
-    # 3) SetupComplete on the applied OS
+    # ---- 3) find the applied OS drive ----
     $t = 'C:'
     if (-not (Test-Path "$t\Windows\System32\ntoskrnl.exe")) {
-        $t = ((Get-Volume | ?{$_.DriveLetter -and (Test-Path "$($_.DriveLetter):\Windows\System32\ntoskrnl.exe")}|select -First 1).DriveLetter)+':'
+    $t = ((Get-Volume | Where-Object { $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\Windows\System32\ntoskrnl.exe") } | Select-Object -First 1).DriveLetter) + ':'
     }
-    $s = "$t\Windows\Setup\Scripts"; New-Item $s -ItemType Directory -Force | Out-Null
-    @'
-@echo off
-PowerShell -NoProfile -ExecutionPolicy Bypass -File "%~dp0SetupComplete.ps1" >> "%WINDIR%\Temp\SetupComplete.log" 2>&1
-exit /b 0
-'@ | Set-Content "$s\SetupComplete.cmd" -Encoding Ascii -Force
-    @'
-$ErrorActionPreference='SilentlyContinue'
-"[$(Get-Date -f o)] start" | Write-Output
-$k=(Get-CimInstance SoftwareLicensingService).OA3xOriginalProductKey
-if($k){$sls=Get-CimInstance SoftwareLicensingService
- Invoke-CimMethod -InputObject $sls -MethodName InstallProductKey -Arguments @{ProductKey=$k}|Out-Null
- Start-Sleep 5
- Invoke-CimMethod -InputObject $sls -MethodName RefreshLicenseStatus|Out-Null
- "OA3 key installed"|Write-Output}
-Remove-Item C:\Windows\Panther\unattend.xml,C:\Windows\Panther\unattend\unattend.xml -Force -EA 0
-"[$(Get-Date -f o)] done"|Write-Output
-'@ | Set-Content "$s\SetupComplete.ps1" -Encoding UTF8 -Force
+    Write-Host "Applied OS drive: $t"
 
-    # copy logs to media if present
-    $log = Get-Volume | ?{$_.DriveLetter -and (Test-Path "$($_.DriveLetter):\OSDCloudLogs")} | select -First 1
-    if ($log) { Copy-Item X:\Windows\Temp\*.log "$($log.DriveLetter):\OSDCloudLogs\" -Force -EA 0 }
+    # ---- 4) undo the workflow's PSReadLine side-by-side install ----
+    if ($doFixPSReadLine) {
+        $psrl = "$t\Program Files\WindowsPowerShell\Modules\PSReadLine"
+        Get-ChildItem $psrl -Directory -ErrorAction SilentlyContinue |
+            Where-Object Name -ne '2.0.0' | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "PSReadLine: kept inbox 2.0.0, removed any workflow-added copies"
+    }
+
+    # ---- 5) write SetupComplete ----
+    $s = "$t\Windows\Setup\Scripts"
+    New-Item $s -ItemType Directory -Force | Out-Null
+    $oemText = if ($doOemActivation) { $SetupCompleteOem } else { '# OEM activation skipped (config.json OemActivation:false)' }
+    Set-Content "$s\SetupComplete.cmd" -Value $SetupCompleteCmd -Encoding Ascii -Force
+    Set-Content "$s\SetupComplete.ps1" -Value ($SetupCompletePs1.Replace('#__OEM__', $oemText)) -Encoding UTF8 -Force
+    Write-Host "SetupComplete written (OEM activation: $doOemActivation)"
 }
-finally { Stop-Transcript | Out-Null }
+finally {
+    Stop-Transcript | Out-Null
+    $vol = Get-Volume | Where-Object { $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\OSDCloudLogs") } | Select-Object -First 1
+    if ($vol) { Copy-Item (Join-Path $logDir '*.log') "$($vol.DriveLetter):\OSDCloudLogs\" -Force -ErrorAction SilentlyContinue }
+}

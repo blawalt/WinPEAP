@@ -1,0 +1,27 @@
+{
+  "_comment": "Lives on the boot media only. NEVER commit config.json. Initialize-WinPEAP.ps1 writes/merges the top keys; add the optional ones by hand and they are preserved on re-run.",
+
+  "Repo": "blawalt/WinPEAP",
+  "Ref":  "main",
+
+  "TenantId": "00000000-0000-0000-0000-000000000000",
+  "AppId":    "00000000-0000-0000-0000-000000000000",
+  "AuthMode": "DeviceCode",
+
+  "GroupTagMenu": [
+    { "label": "1:1 Assigned", "tag": "" },
+    { "label": "Shared",       "tag": "Shared" }
+  ],
+
+  "OemActivation": true,
+  "FixPSReadLine": true,
+
+  "_notes": {
+    "Repo": "owner/name of the repo (or your fork) the media pulls scripts from at runtime",
+    "Ref":  "branch or tag you pin to - 'main', your own 'stable', a version tag",
+    "AuthMode": "DeviceCode (no secret) or ClientSecret (add \"AppSecret\": \"...\")",
+    "GroupTagMenu": "OPTIONAL. Omit for a plain 'Group Tag (blank = none)' prompt. Include an array of {label, tag} for a numbered menu; a 'Manual entry' option is always appended.",
+    "OemActivation": "OPTIONAL, default true. false = don't write the InstallProductKey step into SetupComplete (set false if you deploy Enterprise / use KMS or subscription activation).",
+    "FixPSReadLine": "OPTIONAL, default true. false = leave the workflow's duplicate PSReadLine module in place."
+  }
+}

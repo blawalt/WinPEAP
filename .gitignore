@@ -1,0 +1,8 @@
+# Never commit a populated media config (contains tenant/app + possibly a secret)
+config.json
+
+# Build artifacts / local downloads
+*.iso
+PCPKsp.dll
+OA3.xml
+OA3.bin
