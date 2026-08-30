@@ -24,7 +24,8 @@ function Invoke-WinPEAPBuild {
         [string] $OSDeployRoot = 'C:\ProgramData\OSDeployCore\OSDRepo',
         [string] $BootRoot     = 'C:\ProgramData\OSDeployCore\boot',
         [ValidateSet('ISO','USB','Both','None')] [string] $Media = 'ISO',
-        [hashtable] $BuildArgs = @{}
+        [hashtable] $BuildArgs  = @{},   # extra args for Build-OSDeployBoot (e.g. @{ Auto = $true })
+        [hashtable] $UpdateArgs = @{}    # extra args for Update-OSDeployBootISO/USB (e.g. a path/name param)
     )
     $ErrorActionPreference = 'Stop'
 
@@ -47,11 +48,13 @@ function Invoke-WinPEAPBuild {
     robocopy $src $dst /E /PURGE /NFL /NDL /NJH /NJS | Out-Null
     if ($LASTEXITCODE -ge 8) { throw "robocopy failed (exit code $LASTEXITCODE) copying '$src' -> '$dst'" }
     Write-Host "Staged startup files -> $($build.Name)" -ForegroundColor Green
+    Write-Host "Re-packing media (Build-OSDeployBoot made the ISO BEFORE the files were staged)..." -ForegroundColor Yellow
+    Write-Host "  If a folder picker appears, select: $($build.Name)" -ForegroundColor Yellow
 
     switch ($Media) {
-        'ISO'  { Update-OSDeployBootISO -Name $build.Name }
-        'USB'  { Update-OSDeployBootUSB -Name $build.Name }
-        'Both' { Update-OSDeployBootISO -Name $build.Name; Update-OSDeployBootUSB -Name $build.Name }
+        'ISO'  { Update-OSDeployBootISO @UpdateArgs }
+        'USB'  { Update-OSDeployBootUSB @UpdateArgs }
+        'Both' { Update-OSDeployBootISO @UpdateArgs; Update-OSDeployBootUSB @UpdateArgs }
     }
 
     Write-Host "Done: $($build.FullName)" -ForegroundColor Cyan
