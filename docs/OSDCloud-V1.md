@@ -40,7 +40,7 @@ Before starting, ensure the following are installed and configured on the admini
 * **PowerShell:** Running as Administrator.
 * **OSDCloud Module:** Install or update the OSDCloud PowerShell module.
     ```powershell
-    Install-Module OSDCloud -Force
+    Install-Module OSD -Force
     ```
 * **Windows Assessment and Deployment Kit (ADK) and WinPE Add-on:** Install the Windows 10 ADK and the corresponding Windows PE add-on. These provide essential deployment tools, including WinPE itself and the `oa3tool.exe` needed later.
     * Download link: [Windows ADK Downloads (Microsoft Learn)](https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install)
