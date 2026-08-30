@@ -178,12 +178,19 @@ the stock profile references them; `Initialize-WinPEAP.ps1` inherits that.
 Invoke-WinPEAPBuild -BuildName AP -Media ISO      # ISO | USB | Both
 ```
 
-`Build-OSDeployBoot` pops a GUI profile picker — **select `AP`**. If `Get-Help Build-OSDeployBoot -Full`
-shows a non-interactive flag (e.g. `-Auto`), pass it through: `Invoke-WinPEAPBuild -BuildArgs @{ Auto = $true }`.
+The wrapper does three things, and **two of them show a GUI picker** (the OSDeploy cmdlets take
+no path/name parameter):
 
-`Invoke-WinPEAPBuild` runs `Build-OSDeployBoot`, re-stages `winpe-startup-files\` into the fresh
-build (Build regenerates that tree each run), then packages. **Always build through this wrapper**
-so the startup files aren't lost.
+1. `Build-OSDeployBoot` — **select `AP`** at the profile picker (or pass a non-interactive flag
+   via `-BuildArgs @{ Auto = $true }` if `Get-Help Build-OSDeployBoot -Full` shows one)
+2. robocopy `winpe-startup-files\` → the fresh build's `bootmedia\WinPEStartup\Files\`
+   (Build makes the ISO *before* this, so the media must be re-packed)
+3. `Update-OSDeployBootISO` / `Update-OSDeployBootUSB` — **select the build folder**
+   (e.g. `26100.1-amd64-AP`) at the folder picker
+
+Building media is a rare admin task, so two folder-picks are acceptable; the per-device tech
+flow (boot → deploy) stays fully hands-off. **Always build through this wrapper** — a plain
+`Build-OSDeployBoot` leaves the startup files out of the media.
 
 ## Part D — test
 
