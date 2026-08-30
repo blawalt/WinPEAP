@@ -22,7 +22,7 @@ tooling is a `pwsh` workflow), install the modules, the ADK, and WinPE drivers:
 
 ```powershell
 Install-Module OSDCloud, OSD -Force -Scope AllUsers
-Install-Module OSDeploy -AllowPrerelease -Force -Scope AllUsers    # prerelease-only; time-limited, re-run before each build
+Install-Module OSDeploy -AllowPrerelease -Force -Scope AllUsers    # prerelease-only
 
 Install-OSDeploySoftware -Name 'adk-25h2' -Force  # Windows ADK + WinPE add-on
 Update-OSDeployCoreDrivers                        # WinPE drivers
