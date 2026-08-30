@@ -40,7 +40,6 @@ param(
     [string] $SeedProfile,                        # build profile to seed AP.json from (default: OSDeploy.json)
     [string] $TimeZone,                           # override SetTimeZone in the build profile (else inherit the seed's)
     [switch] $NoWallpaper,                        # clear WinPECustomWallpaper in the build profile
-    [string[]] $GroupTagMenu,                     # e.g. '1:1 Assigned=', 'Shared=Shared' - omit for a plain prompt
     [string] $TenantId,
     [string] $AppId,
     [string] $AppSecret
@@ -88,17 +87,18 @@ $profDir  = Join-Path $OSDeployRoot 'winpe-profiles'
 $filesDir = Join-Path $OSDeployRoot 'winpe-startup-files'
 $profDir,$filesDir,$bpDir | ForEach-Object { New-Item $_ -ItemType Directory -Force | Out-Null }
 
-# ---------- 4. config.json ----------
-$cfg = [ordered]@{ Repo = $Repo; Ref = $Ref; TenantId = $TenantId; AppId = $AppId; AuthMode = $AuthMode }
-if ($AuthMode -eq 'ClientSecret') { $cfg.AppSecret = $AppSecret }
-if ($GroupTagMenu) {
-    $cfg.GroupTagMenu = @($GroupTagMenu | ForEach-Object {
-        $p = $_ -split '=', 2
-        [ordered]@{ label = $p[0].Trim(); tag = (@($p)[1] ?? '').Trim() }
-    })
+# ---------- 4. config.json (merge: keys we own are updated, hand-added keys preserved) ----------
+$cfgPath = Join-Path $filesDir 'config.json'
+$cfg = [ordered]@{}
+if (Test-Path $cfgPath) {
+    foreach ($p in (Get-Content $cfgPath -Raw | ConvertFrom-Json).PSObject.Properties) { $cfg[$p.Name] = $p.Value }
 }
-$cfg | ConvertTo-Json | Set-Content (Join-Path $filesDir 'config.json') -Encoding UTF8
-Say "config.json written ($AuthMode$(if($AuthMode -eq 'DeviceCode'){' - no secret on media'}))" Green
+$cfg.Repo = $Repo; $cfg.Ref = $Ref; $cfg.TenantId = $TenantId; $cfg.AppId = $AppId; $cfg.AuthMode = $AuthMode
+if ($AuthMode -eq 'ClientSecret') { $cfg.AppSecret = $AppSecret }
+elseif ($cfg.Contains('AppSecret')) { $cfg.Remove('AppSecret') }
+$cfg | ConvertTo-Json -Depth 8 | Set-Content $cfgPath -Encoding UTF8
+$kept = @($cfg.Keys | Where-Object { $_ -notin 'Repo','Ref','TenantId','AppId','AuthMode','AppSecret' })
+Say "config.json ($AuthMode$(if($AuthMode -eq 'DeviceCode'){' - no secret on media'})$(if($kept){"; kept: $($kept -join ', ')"}))" Green
 
 # ---------- 5. OA3 tooling ----------
 if ($adkOa3) { Copy-Item $adkOa3.FullName (Join-Path $filesDir 'oa3tool.exe') -Force; Say "oa3tool.exe from ADK" Green }

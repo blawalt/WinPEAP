@@ -167,10 +167,26 @@ iwr https://raw.githubusercontent.com/blawalt/WinPEAP/main/Initialize-WinPEAP.ps
 | `-SeedProfile` | `OSDeploy.json` | build profile to copy as the base for `AP.json` (name in `build-profiles\amd64\` or a full path) |
 | `-TimeZone` | *(inherit seed's)* | override `SetTimeZone`, e.g. `'Eastern Standard Time'` |
 | `-NoWallpaper` | off | clear `WinPECustomWallpaper` (drop the Recast branding) |
-| `-GroupTagMenu` | *(none — plain prompt)* | `'Label=tag'` pairs for a numbered Group Tag menu, e.g. `'1:1 Assigned=', 'Shared=Shared'`; a "Manual entry" option is always appended |
 
 Drivers are **not** an option here — `Update-OSDeployCoreDrivers` (a prereq) populates them and
 the stock profile references them; `Initialize-WinPEAP.ps1` inherits that.
+
+### Editing `config.json` directly
+
+`Initialize-WinPEAP.ps1` **merges** — it updates the keys it owns (`Repo`, `Ref`, `TenantId`,
+`AppId`, `AuthMode`, `AppSecret`) and leaves anything else you added alone. So put org-specific,
+rarely-changing settings straight in `OSDRepo\winpe-startup-files\config.json` and re-run
+`Initialize-WinPEAP.ps1` freely. The main one is the Group Tag menu:
+
+```json
+"GroupTagMenu": [
+  { "label": "1:1 Assigned", "tag": "" },
+  { "label": "Shared",       "tag": "Shared" }
+]
+```
+
+Omit it entirely for a plain `Group Tag (blank = none)` prompt (the community default). A
+"Manual entry" option is always appended.
 
 ## Part C — build the media
 
