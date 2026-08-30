@@ -17,31 +17,31 @@ Both use the same `4kAutopilotHashUpload.ps1`.
 
 ## Quick start (V2)
 
-**Prereq:** on the build box, in an **elevated PowerShell 7** session (7.6+ — the OSDeploy V2
-tooling is a `pwsh` workflow), install the modules, the ADK, and WinPE drivers:
+On the build box, in an **elevated PowerShell 7** session (7.6+ — the OSDeploy V2 tooling is a
+`pwsh` workflow). Full details, caveats, and app-registration setup are in
+[docs/OSDCloud-V2.md](docs/OSDCloud-V2.md); the short version:
 
 ```powershell
-Install-Module OSDCloud, OSD -Force -Scope AllUsers
-Install-Module OSDeploy -AllowPrerelease -Force -Scope AllUsers    # prerelease-only
+# --- session 1: modules ---
+Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+Install-Module OSDCloud, OSD -Force -SkipPublisherCheck -Scope AllUsers
+Install-Module OSDeploy -AllowPrerelease -Force -Scope AllUsers      # prerelease-only
 
-Install-OSDeploySoftware -Name 'adk-25h2' -Force  # Windows ADK + WinPE add-on
-Update-OSDeployCoreDrivers                        # WinPE drivers
-Build-OSDeployBoot                                # run once, Cancel the picker to seed the stock build profile
-```
+# --- close it, open a fresh pwsh (Install-Module doesn't refresh the session) ---
 
-(`Invoke-OSDeployHydration` does all this plus a Windows OS import, but is interactive — see
-[docs/OSDCloud-V2.md](docs/OSDCloud-V2.md). On a **VM** build box, `Install-OSDeploySoftware
--Name 'adk-25h2'` currently trips a spurious Hyper-V prereq — see the docs note.)
+Install-OSDeploySoftware -Name 'adk-25h2' -Force   # ADK + WinPE add-on
+Update-OSDeployCoreDrivers                          # WinPE drivers
+Build-OSDeployBoot                                 # run once, Cancel the picker to seed the stock build profile
 
-Then add the WinPEAP Autopilot layer and build:
-
-```powershell
+# --- the WinPEAP layer + build ---
 iwr https://raw.githubusercontent.com/blawalt/WinPEAP/main/Initialize-WinPEAP.ps1 -OutFile Initialize-WinPEAP.ps1
 .\Initialize-WinPEAP.ps1 -AuthMode DeviceCode      # prompts for Tenant ID + App ID, no secret on media
 
 . C:\ProgramData\OSDeployCore\OSDRepo\Invoke-WinPEAPBuild.ps1
-Invoke-WinPEAPBuild -BuildName AP -Media USB
+Invoke-WinPEAPBuild -BuildName AP -Media ISO       # select 'AP' at the profile picker
 ```
+
+Output: `C:\ProgramData\OSDeployCore\boot\26100.1-amd64-AP\bootmedia.iso`.
 
 ### Fork &amp; pin your own ref
 
@@ -66,10 +66,10 @@ checklist, and the VM → hardware test plan.
 
 | File | Used by | Purpose |
 |---|---|---|
-| `Initialize-WinPEAP.ps1` | V2 | Layers the Autopilot bits (config, profile, startup files, build profile) onto a prepared OSDeployCore box |
-| `Invoke-WinPEAPBuild.ps1` | V2 | Wrapper: `Build-OSDeployBoot` → stage startup files → package ISO/USB |
+| `Initialize-WinPEAP.ps1` | V2 | Writes `config.json`, the WinPEStartup profile, `winpeap-media.ps1`, and the seeded build profile onto a prepared OSDeployCore box |
+| `Invoke-WinPEAPBuild.ps1` | V2 | Runs `Build-OSDeployBoot` (files staged during the build), verifies, optional USB |
 | `bootstrap.ps1` | V2 | Runtime orchestrator: hash upload → OSDCloud workflow → write `SetupComplete` |
-| `Startup.ps1` | V2 | Optional thin WinPE launcher (fetches `bootstrap.ps1`) |
+| `Startup.ps1` | V2 | Optional thin WinPE launcher (only with `-ProfileStyle Loader`) |
 | `4kAutopilotHashUpload.ps1` | V1 + V2 | Generate 4k hash in WinPE, upload to Autopilot (client‑secret **or** device‑code auth) |
 | `oa3tool.exe`, `oa3.cfg`, `input.xml` | V1 + V2 | OA3Tool + config for hash generation |
 | `config.sample.json` | V2 | Template for the media‑side `config.json` (never commit a real one) |
