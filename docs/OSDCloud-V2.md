@@ -67,23 +67,21 @@ build side).
 Install-Module OSDCloud, OSD -Force -Scope AllUsers
 Install-Module OSDeploy -AllowPrerelease -Force -Scope AllUsers
 
-# Windows ADK + WinPE add-on  (install directly - see note below)
-winget install --id Microsoft.WindowsADK --exact --accept-source-agreements --accept-package-agreements
-winget install --id Microsoft.ADKPEAddon --exact --accept-source-agreements --accept-package-agreements
-
+Install-OSDeploySoftware -Name 'adk-25h2' -Force  # Windows ADK + WinPE add-on (adjust the ADK name to taste)
 Update-OSDeployCoreDrivers                        # WinPE network / storage / wifi drivers -> winpe-drivers\amd64\*
 
 Build-OSDeployBoot                                # run once, press Cancel at the profile picker to seed
                                                   # build-profiles\amd64\OSDeploy.json (the stock profile)
 ```
 
-> **Why not `Install-OSDeploySoftware -Name 'adk-25h2'`?** In the current preview it declares a
-> Hyper-V-feature prerequisite for the ADK; on a VM `Test-IsVM` makes it mark the ADK
-> `NotSupported` and skip it. The ADK doesn't actually need the Hyper-V feature —
-> `Build-OSDeployBoot` auto-detects any installed ADK — so install it directly.
+> **The OSDeploy preview module is time-limited** — it warns on load (e.g. *"expires 2026-08-31"*)
+> and stops working after that date. Run `Update-Module OSDeploy -AllowPrerelease -Force` before
+> each build session.
 >
-> **The OSDeploy preview module is time-limited** (it warns on load, e.g. *"expires 2026-08-31"*).
-> Run `Update-Module OSDeploy -AllowPrerelease -Force` before each build session.
+> **Known VM snag:** in the current preview, `Install-OSDeploySoftware -Name 'adk-25h2'` pulls a
+> `hyperv` prerequisite and `Test-IsVM` then marks the ADK `NotSupported` on a virtual build box.
+> `Build-OSDeployBoot` only needs the ADK itself (no Hyper-V feature), so on a VM either install
+> the ADK another way or work around the check until it's fixed upstream.
 
 `Initialize-WinPEAP.ps1` **seeds its build profile (`AP.json`) from that stock `OSDeploy.json`**
 and only overrides `WinPEStartupProfile` — so `Languages`, `SetTimeZone`, `WinPEMediaScript`,

@@ -24,16 +24,14 @@ tooling is a `pwsh` workflow), install the modules, the ADK, and WinPE drivers:
 Install-Module OSDCloud, OSD -Force -Scope AllUsers
 Install-Module OSDeploy -AllowPrerelease -Force -Scope AllUsers    # prerelease-only; time-limited, re-run before each build
 
-winget install --id Microsoft.WindowsADK --exact --accept-source-agreements --accept-package-agreements
-winget install --id Microsoft.ADKPEAddon --exact --accept-source-agreements --accept-package-agreements
-
+Install-OSDeploySoftware -Name 'adk-25h2' -Force  # Windows ADK + WinPE add-on
 Update-OSDeployCoreDrivers                        # WinPE drivers
 Build-OSDeployBoot                                # run once, Cancel the picker to seed the stock build profile
 ```
 
-(Don't use `Install-OSDeploySoftware -Name 'adk-25h2'` — in the current preview it wrongly
-blocks the ADK inside a VM on a spurious Hyper-V dependency. `Invoke-OSDeployHydration` does all
-this plus a Windows OS import, but is interactive — see [docs/OSDCloud-V2.md](docs/OSDCloud-V2.md).)
+(`Invoke-OSDeployHydration` does all this plus a Windows OS import, but is interactive — see
+[docs/OSDCloud-V2.md](docs/OSDCloud-V2.md). On a **VM** build box, `Install-OSDeploySoftware
+-Name 'adk-25h2'` currently trips a spurious Hyper-V prereq — see the docs note.)
 
 Then add the WinPEAP Autopilot layer and build:
 
