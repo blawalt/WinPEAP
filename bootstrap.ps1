@@ -43,7 +43,7 @@ function Get-RepoScript {
     $dest = Join-Path $env:TEMP $Name
     for ($i = 1; $i -le 5; $i++) {
         try { Invoke-WebRequest -UseBasicParsing "$base/$Name" -OutFile $dest; return $dest }
-        catch { Start-Sleep 10 }
+        catch { Write-Warning "fetch $Name attempt $i failed: $_"; Start-Sleep 10 }
     }
     $baked = Join-Path 'X:\' $Name
     if (Test-Path $baked) { Write-Warning "GitHub unreachable - using baked X:\$Name"; return $baked }
@@ -57,23 +57,18 @@ try {
     $up = Get-RepoScript '4kAutopilotHashUpload.ps1'
     & $up -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret -GroupTag $GroupTag -UploadToAutopilot -ToolRoot 'X:\'
 
-    # ---- 2) OSDCloud V2 workflow ----
-    & (Import-Module OSDCloud -PassThru -Force) {
-    # OSDCloud 26.9.25.1 renamed Initialize-OSDCloudDeploy -> Initialize-DeployOSDCloud
-    $init = @('Initialize-DeployOSDCloud', 'Initialize-OSDCloudDeploy') |
-        Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
-    if (-not $init) { throw 'OSDCloud module has no Initialize-DeployOSDCloud / Initialize-OSDCloudDeploy' }
-    & $init -WorkflowName 'default'
-    $global:OSDCloudDeploy.Force     = $true
-    $global:OSDCloudDeploy.TimeStart = Get-Date
-    Invoke-OSDCloudWorkflowTask
-    }
+    # ---- 2) OSDCloud V2 workflow (public entry point only) ----
+    # -CLI skips the UX and runs the 'default' workflow now; -Force suppresses the destructive-step prompts
+    Import-Module OSDCloud -Force
+    Deploy-OSDCloud -WorkflowName 'default' -CLI -Force
 
     # ---- 3) find the applied OS drive ----
     $t = 'C:'
     if (-not (Test-Path "$t\Windows\System32\ntoskrnl.exe")) {
-        $t = ((Get-Volume | Where-Object { $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\Windows\System32\ntoskrnl.exe") } |
-                Select-Object -First 1).DriveLetter) + ':'
+        $v = Get-Volume | Where-Object { $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\Windows\System32\ntoskrnl.exe") } |
+                Select-Object -First 1
+        if (-not $v) { throw 'OSDCloud workflow finished but no applied Windows volume was found.' }
+        $t = "$($v.DriveLetter):"
     }
     Write-Host "Applied OS drive: $t"
 
