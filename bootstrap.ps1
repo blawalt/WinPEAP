@@ -59,10 +59,14 @@ try {
 
     # ---- 2) OSDCloud V2 workflow ----
     & (Import-Module OSDCloud -PassThru -Force) {
-        Initialize-OSDCloudDeploy -WorkflowName 'default'
-        $global:OSDCloudDeploy.Force     = $true
-        $global:OSDCloudDeploy.TimeStart = Get-Date
-        Invoke-OSDCloudWorkflowTask
+    # OSDCloud 26.9.25.1 renamed Initialize-OSDCloudDeploy -> Initialize-DeployOSDCloud
+    $init = @('Initialize-DeployOSDCloud', 'Initialize-OSDCloudDeploy') |
+        Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
+    if (-not $init) { throw 'OSDCloud module has no Initialize-DeployOSDCloud / Initialize-OSDCloudDeploy' }
+    & $init -WorkflowName 'default'
+    $global:OSDCloudDeploy.Force     = $true
+    $global:OSDCloudDeploy.TimeStart = Get-Date
+    Invoke-OSDCloudWorkflowTask
     }
 
     # ---- 3) find the applied OS drive ----
