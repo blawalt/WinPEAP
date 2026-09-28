@@ -55,7 +55,9 @@ try {
 
     # ---- 1) Autopilot 4k hash upload ----
     $up = Get-RepoScript '4kAutopilotHashUpload.ps1'
+    $global:LASTEXITCODE = 0
     & $up -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret -GroupTag $GroupTag -UploadToAutopilot -ToolRoot 'X:\'
+    if ($LASTEXITCODE -ne 0) { throw "Autopilot hash upload failed (exit $LASTEXITCODE) - not imaging an unregistered device. Reboot to retry." }
 
     # ---- 2) OSDCloud V2 workflow (public entry point only) ----
     # -CLI skips the UX and runs the 'default' workflow now; -Force suppresses the destructive-step prompts

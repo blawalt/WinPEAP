@@ -217,55 +217,62 @@ if (Test-Path $OA3Xml) {
     }
     Write-Host "CSV file created at: $TempCSVPath" -ForegroundColor Green
 
+    # Exit codes: 0 = registered (or upload skipped), 1 = no hash / upload failed.
+    # bootstrap.ps1 stops the deployment on a non-zero exit so a device is never imaged unregistered.
     if ($UploadToAutopilot) {
         if ([string]::IsNullOrEmpty($TenantId) -or [string]::IsNullOrEmpty($AppId) -or [string]::IsNullOrEmpty($AppSecret)) {
             Write-Host "Error: TenantId, AppId, and AppSecret are required for Autopilot upload" -ForegroundColor Red
+            Pop-Location
+            exit 1
         }
-        else {
-            try {
-                Write-Host "Getting authorization token..." -ForegroundColor Yellow
-                $authToken = Get-AuthToken -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret
+        $registered = $false
+        try {
+            Write-Host "Getting authorization token..." -ForegroundColor Yellow
+            $authToken = Get-AuthToken -TenantId $TenantId -AppId $AppId -AppSecret $AppSecret
 
+            # Check first - importing a serial that's already registered just leaves a failed import record behind
+            $device = Get-AutopilotDevice -Serial $serial -AuthToken $authToken
+            if ($device) {
+                Write-Host "Device already exists in Autopilot with SerialNumber: $serial - skipping import" -ForegroundColor Green
+                $registered = $true
+            }
+            else {
                 Write-Host "Adding device to Autopilot..." -ForegroundColor Yellow
                 $importedDevice = Add-AutopilotImportedDevice -SerialNumber $serial -HardwareHash $hash -GroupTag $GroupTag -AuthToken $authToken
+                if (-not $importedDevice.id) { throw "Import request returned no device ID" }
 
-                $device = Get-AutopilotDevice -Serial $serial -AuthToken $authToken
-                if ($device) {
-                    Write-Host "Device already exists in Autopilot with SerialNumber: $serial" -ForegroundColor Green
-                }
-                else {
-                    if ($importedDevice) {
-                        Write-Host "Device added successfully with ID: $($importedDevice.id)" -ForegroundColor Green
-                        Write-Host "Waiting for import to complete..." -ForegroundColor Yellow
-                        $processingComplete = $false
-                        $maxRetries = 20
-                        $retryCount = 0
-                        while (-not $processingComplete -and $retryCount -lt $maxRetries) {
-                            Start-Sleep -Seconds 15
-                            $device = Get-AutopilotImportedDevice -Id $importedDevice.id -AuthToken $authToken
-                            if ($device.state.deviceImportStatus -eq "complete") {
-                                $processingComplete = $true
-                                Write-Host "Import completed successfully!" -ForegroundColor Green
-                                Write-Host "Device Registration ID: $($device.state.deviceRegistrationId)" -ForegroundColor Cyan
-                            }
-                            elseif ($device.state.deviceImportStatus -eq "error") {
-                                Write-Host "Import failed: $($device.state.deviceErrorCode) - $($device.state.deviceErrorName)" -ForegroundColor Red
-                                break
-                            }
-                            else {
-                                Write-Host "Import status: $($device.state.deviceImportStatus). Waiting..." -ForegroundColor Yellow
-                                $retryCount++
-                            }
-                        }
-                        if (-not $processingComplete) {
-                            Write-Host "Import did not complete within the expected time." -ForegroundColor Yellow
-                        }
+                Write-Host "Device added successfully with ID: $($importedDevice.id)" -ForegroundColor Green
+                Write-Host "Waiting for import to complete..." -ForegroundColor Yellow
+                $maxRetries = 20
+                $retryCount = 0
+                while (-not $registered -and $retryCount -lt $maxRetries) {
+                    Start-Sleep -Seconds 15
+                    $device = Get-AutopilotImportedDevice -Id $importedDevice.id -AuthToken $authToken
+                    if ($device.state.deviceImportStatus -eq "complete") {
+                        $registered = $true
+                        Write-Host "Import completed successfully!" -ForegroundColor Green
+                        Write-Host "Device Registration ID: $($device.state.deviceRegistrationId)" -ForegroundColor Cyan
+                    }
+                    elseif ($device.state.deviceImportStatus -eq "error") {
+                        Write-Host "Import failed: $($device.state.deviceErrorCode) - $($device.state.deviceErrorName)" -ForegroundColor Red
+                        break
+                    }
+                    else {
+                        Write-Host "Import status: $($device.state.deviceImportStatus). Waiting..." -ForegroundColor Yellow
+                        $retryCount++
                     }
                 }
+                if (-not $registered -and $retryCount -ge $maxRetries) {
+                    Write-Host "Import did not complete within the expected time." -ForegroundColor Red
+                }
             }
-            catch {
-                Write-Host "An error occurred during the Autopilot upload process: $_" -ForegroundColor Red
-            }
+        }
+        catch {
+            Write-Host "An error occurred during the Autopilot upload process: $_" -ForegroundColor Red
+        }
+        if (-not $registered) {
+            Pop-Location
+            exit 1
         }
     }
     else {
@@ -279,3 +286,4 @@ else {
 }
 
 Pop-Location
+exit 0   # explicit - otherwise $LASTEXITCODE is whatever oa3tool/rundll32 last returned
