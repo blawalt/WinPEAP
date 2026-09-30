@@ -3,7 +3,10 @@ param(
     [Parameter(Mandatory)]        [string] $AppId,
     [Parameter(Mandatory)]        [string] $AppSecret,
     [Parameter(Mandatory=$false)] [string] $GroupTag = '',
-    [string] $Ref = 'prod'
+    [string] $Ref = 'prod',
+    # OS pin - without it OSDCloud follows the workflow default (moved 25H2 -> 26H2 in 26.9.29.1).
+    # Must be one of the default workflow's values, e.g. 'Windows 11 26H2', 'Windows 11 25H2', 'Windows 11 24H2'.
+    [string] $OperatingSystem = 'Windows 11 25H2'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,7 +65,8 @@ try {
     # ---- 2) OSDCloud V2 workflow (public entry point only) ----
     # -CLI skips the UX and runs the 'default' workflow now; -Force suppresses the destructive-step prompts
     Import-Module OSDCloud -Force
-    Deploy-OSDCloud -WorkflowName 'default' -CLI -Force
+    Write-Host "Deploying: $OperatingSystem"
+    Deploy-OSDCloud -WorkflowName 'default' -CLI -Force -OperatingSystem $OperatingSystem
 
     # ---- 3) find the applied OS drive ----
     $t = 'C:'
