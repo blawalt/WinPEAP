@@ -13,6 +13,8 @@
     { "label": "Shared",       "tag": "Shared" }
   ],
 
+  "OperatingSystem": "Windows 11 25H2",
+
   "OemActivation": true,
   "FixPSReadLine": true,
 
@@ -21,6 +23,7 @@
     "Ref":  "branch or tag you pin to - 'main', your own 'stable', a version tag",
     "AuthMode": "DeviceCode (no secret) or ClientSecret (add \"AppSecret\": \"...\")",
     "GroupTagMenu": "OPTIONAL. Omit for a plain 'Group Tag (blank = none)' prompt. Include an array of {label, tag} for a numbered menu; a 'Manual entry' option is always appended.",
+    "OperatingSystem": "OPTIONAL, default 'Windows 11 25H2'. Pins the OS passed to Deploy-OSDCloud; must be one of the default workflow's values (e.g. 'Windows 11 26H2', 'Windows 11 24H2').",
     "OemActivation": "OPTIONAL, default true. false = don't write the InstallProductKey step into SetupComplete (set false if you deploy Enterprise / use KMS or subscription activation).",
     "FixPSReadLine": "OPTIONAL, default true. false = leave the workflow's duplicate PSReadLine module in place."
   }

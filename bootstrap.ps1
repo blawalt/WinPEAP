@@ -4,7 +4,7 @@
     Called by the WinPEStartup profile (directly, or via Startup.ps1). Reads X:\config.json
     for tenant / app / auth settings, prompts the operator for a Group Tag, then:
       1. runs the Autopilot 4k hash upload
-      2. runs the OSDCloud V2 workflow (image download + apply)
+      2. runs the OSDCloud V2 workflow (image download + apply; OS pinned, config.json "OperatingSystem" to override)
       3. removes the workflow's duplicate PSReadLine    (config.json  "FixPSReadLine": false  to skip)
       4. writes SetupComplete on the applied OS:
            - OEM firmware-key activation             (config.json  "OemActivation": false  to skip)
@@ -129,24 +129,25 @@ try {
     }
     if ($cfg.AppSecret) { $apParams.AppSecret = $cfg.AppSecret }
     if ($groupTag)      { $apParams.GroupTag  = $groupTag }
+    $global:LASTEXITCODE = 0
     & $up @apParams
+    if ($LASTEXITCODE -ne 0) { throw "Autopilot hash upload failed (exit $LASTEXITCODE) - not imaging an unregistered device. Reboot to retry." }
 
     # ---- 2) OSDCloud V2 workflow ----
-    & (Import-Module OSDCloud -PassThru -Force) {
-    # OSDCloud 26.9.25.1 renamed Initialize-OSDCloudDeploy -> Initialize-DeployOSDCloud
-    $init = @('Initialize-DeployOSDCloud', 'Initialize-OSDCloudDeploy') |
-        Where-Object { Get-Command $_ -ErrorAction SilentlyContinue } | Select-Object -First 1
-    if (-not $init) { throw 'OSDCloud module has no Initialize-DeployOSDCloud / Initialize-OSDCloudDeploy' }
-    & $init -WorkflowName 'default'
-    $global:OSDCloudDeploy.Force     = $true
-    $global:OSDCloudDeploy.TimeStart = Get-Date
-    Invoke-OSDCloudWorkflowTask
-    }
+    # Public entry point only. -CLI skips the UX and runs the workflow now; -Force suppresses destructive-step prompts.
+    # OS is pinned: without it OSDCloud follows the workflow default (moved 25H2 -> 26H2 in 26.9.29.1).
+    # Override via config.json "OperatingSystem" (must be one of the default workflow's values).
+    $os = if ($cfg.OperatingSystem) { $cfg.OperatingSystem } else { 'Windows 11 25H2' }
+    Import-Module OSDCloud -Force
+    Write-Host "Deploying: $os"
+    Deploy-OSDCloud -WorkflowName 'default' -CLI -Force -OperatingSystem $os
 
     # ---- 3) find the applied OS drive ----
     $t = 'C:'
     if (-not (Test-Path "$t\Windows\System32\ntoskrnl.exe")) {
-    $t = ((Get-Volume | Where-Object { $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\Windows\System32\ntoskrnl.exe") } | Select-Object -First 1).DriveLetter) + ':'
+    $v = Get-Volume | Where-Object { $_.DriveLetter -and (Test-Path "$($_.DriveLetter):\Windows\System32\ntoskrnl.exe") } | Select-Object -First 1
+    if (-not $v) { throw 'OSDCloud workflow finished but no applied Windows volume was found.' }
+    $t = "$($v.DriveLetter):"
     }
     Write-Host "Applied OS drive: $t"
 
